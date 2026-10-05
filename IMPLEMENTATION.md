@@ -10,7 +10,7 @@ R2 stores cropped badges. The app accepts PNG/JPEG/WebP, crops to 512×512, veri
 
 ## Authentication
 
-The Site starts owner-private. The verified Site owner sets the initial shared password in the app; there is no default password. Passwords are PBKDF2 SHA-256 hashes, with HTTP-only, same-site session cookies expiring after 12 hours. Platform access remains separate from the shared editing password. Public viewing requires an explicit Site audience change by the owner.
+The Site audience is public (decided 2026-10-05, FFL-4): anonymous visitors can read league data and badges (`GET /api/league`, `GET /api/badge`), while every write (`POST /api/league`, `POST /api/badge`) requires an editing session. The audience itself is a Site setting changed by the owner, not app code. The Site owner is identified by the ChatGPT identity header, which is only present after signing in with ChatGPT; on a public Site the owner must use the in-app "เข้าสู่ระบบเจ้าของ" link (`/signin-with-chatgpt`) before owner-only actions such as initial setup. The owner sets the initial shared password in the app; there is no default password. Passwords are PBKDF2 SHA-256 hashes, with HTTP-only, same-site session cookies expiring after 12 hours. ChatGPT sign-in remains separate from the shared editing password.
 
 ## Verification
 
