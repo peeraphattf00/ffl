@@ -44,3 +44,5 @@ next-env.d.ts
 /.codex/
 /outputs/
 /work/
+# League data backups (scripts/backup-league.mjs); keep out of Git.
+/backups/
