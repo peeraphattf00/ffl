@@ -5,27 +5,24 @@ import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/u
 import {Choose,type Data} from './league';
 export async function post(path:string,body:Record<string,unknown>){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json() as {error?:string}&Record<string,unknown>;if(!r.ok)throw new Error(d.error||'ทำรายการไม่สำเร็จ');return d}
 function Field({label,children}:{label:string;children:ReactNode}){return <label className="field">{label}{children}</label>}
-// Sign-in for accounts, the temporary shared-password path while it still exists, and first-admin setup for the verified Site owner.
+// Sign-in for accounts, and first-admin setup for the verified Site owner.
 export function SignIn({data,close,done}:{data:Data;close:()=>void;done:()=>Promise<unknown>}){
- const bootstrap=!data.hasAdmin&&data.setupAllowed,[legacy,setLegacy]=useState(false);
+ const bootstrap=!data.hasAdmin&&data.setupAllowed;
  const [username,setUsername]=useState(''),[password,setPassword]=useState(''),[confirm,setConfirm]=useState(''),[profileId,setProfileId]=useState(data.state.profiles.find(p=>p.id==='player-1')?.id||data.state.profiles[0]?.id||''),[err,setErr]=useState(''),[busy,setBusy]=useState(false);
  async function submit(e:FormEvent){e.preventDefault();setErr('');setBusy(true);try{
-  if(legacy)await post('/api/league',{action:'login',password});
-  else if(bootstrap){if(password!==confirm)throw new Error('รหัสผ่านทั้งสองช่องไม่ตรงกัน');await post('/api/auth',{action:'bootstrap',username,password,profileId})}
+  if(bootstrap){if(password!==confirm)throw new Error('รหัสผ่านทั้งสองช่องไม่ตรงกัน');await post('/api/auth',{action:'bootstrap',username,password,profileId})}
   else await post('/api/auth',{action:'login',username,password});
   await done();close()}catch(e){setErr((e as Error).message)}finally{setBusy(false)}}
- const title=legacy?'เข้าด้วยรหัสกลาง (ชั่วคราว)':bootstrap?'สร้างผู้ดูแลระบบคนแรก':'เข้าสู่ระบบ';
- const blocked=!legacy&&!data.hasAdmin&&!data.setupAllowed;
- return <Dialog open onOpenChange={v=>!v&&!busy&&close()}><DialogContent className="modal"><DialogTitle>{title}</DialogTitle><DialogDescription>{legacy?'ใช้ได้จนกว่าทุกคนจะมีบัญชีของตัวเอง':bootstrap?'ตั้งบัญชีผู้ดูแลของคุณ เพื่อสร้างบัญชีให้เพื่อนต่อ':'ใช้ชื่อผู้ใช้และรหัสผ่านที่ผู้ดูแลให้ไว้'}</DialogDescription><form className="form-stack" onSubmit={submit}>
+ const title=bootstrap?'สร้างผู้ดูแลระบบคนแรก':'เข้าสู่ระบบ';
+ const blocked=!data.hasAdmin&&!data.setupAllowed;
+ return <Dialog open onOpenChange={v=>!v&&!busy&&close()}><DialogContent className="modal"><DialogTitle>{title}</DialogTitle><DialogDescription>{bootstrap?'ตั้งบัญชีผู้ดูแลของคุณ เพื่อสร้างบัญชีให้เพื่อนต่อ':'ใช้ชื่อผู้ใช้และรหัสผ่านที่ผู้ดูแลให้ไว้'}</DialogDescription><form className="form-stack" onSubmit={submit}>
   {blocked?<p className="error">ยังไม่มีผู้ดูแลระบบ เจ้าของเว็บไซต์ต้องสร้างบัญชีแรกก่อน <a href="/signin-with-chatgpt?return_to=/" target="_top">เข้าสู่ระบบเจ้าของ</a></p>
-  :legacy?<Field label="รหัสกลาง"><input type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} minLength={8} maxLength={128} required autoFocus/></Field>
   :<><Field label="ชื่อผู้ใช้"><input autoComplete="username" autoCapitalize="none" spellCheck={false} value={username} onChange={e=>setUsername(e.target.value)} minLength={bootstrap?3:1} maxLength={30} pattern={bootstrap?'[A-Za-z0-9._-]+':undefined} title="a–z, 0–9 และ . _ -" required autoFocus/></Field>
    {bootstrap&&<div className="field">โปรไฟล์ผู้เล่นของคุณ<Choose value={profileId} onChange={setProfileId} items={data.state.profiles} label="โปรไฟล์ผู้เล่น"/></div>}
    <Field label={bootstrap?'ตั้งรหัสผ่านอย่างน้อย 8 ตัวอักษร':'รหัสผ่าน'}><input type="password" autoComplete={bootstrap?'new-password':'current-password'} value={password} onChange={e=>setPassword(e.target.value)} minLength={bootstrap?8:1} maxLength={128} required/></Field>
    {bootstrap&&<Field label="ยืนยันรหัสผ่าน"><input type="password" autoComplete="new-password" value={confirm} onChange={e=>setConfirm(e.target.value)} minLength={8} maxLength={128} required/></Field>}</>}
   {err&&<p className="error" role="alert">{err}</p>}
-  <div className="actions"><Button type="submit" disabled={busy||blocked}>{busy?'กำลังตรวจสอบ…':bootstrap&&!legacy?'สร้างบัญชีผู้ดูแล':'เข้าสู่ระบบ'}</Button><Button type="button" variant="outline" disabled={busy} onClick={close}>ยกเลิก</Button></div>
-  {data.configured&&<Button type="button" variant="ghost" disabled={busy} onClick={()=>{setLegacy(!legacy);setErr('');setPassword('')}}>{legacy?'กลับไปใช้บัญชีของฉัน':'ยังไม่มีบัญชี? เข้าด้วยรหัสกลาง (ชั่วคราว)'}</Button>}
+  <div className="actions"><Button type="submit" disabled={busy||blocked}>{busy?'กำลังตรวจสอบ…':bootstrap?'สร้างบัญชีผู้ดูแล':'เข้าสู่ระบบ'}</Button><Button type="button" variant="outline" disabled={busy} onClick={close}>ยกเลิก</Button></div>
  </form></DialogContent></Dialog>}
 // Password change. Forced after a temporary password: the dialog cannot be dismissed, only completed or signed out of.
 export function ChangePassword({forced,close,done,logout}:{forced:boolean;close:()=>void;done:()=>Promise<unknown>;logout:()=>void}){

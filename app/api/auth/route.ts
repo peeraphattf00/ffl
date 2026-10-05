@@ -18,7 +18,7 @@ export async function POST(req:Request){try{
  return json({ok:true},200,{'Set-Cookie':await startSession(req,id)})}
  if(b.action==='password'){
  // Allowed while must_change_password is set (it is the only thing such a session can do besides logout).
- const s=await session(req);if(!s||s.me.legacy)throw new HttpError(401,'กรุณาเข้าสู่ระบบด้วยบัญชีของคุณ');const me=s.me;
+ const s=await session(req);if(!s)throw new HttpError(401,'กรุณาเข้าสู่ระบบด้วยบัญชีของคุณ');const me=s.me;
  const current=z.string().min(1).max(128).parse(b.current),next=newPassword.parse(b.next);
  const key=await userKey(me.username,await ipKey(req));await assertNotLimited([key,LIMITS.user]);
  const row=(await db().prepare('SELECT hash,salt FROM users WHERE id=?').bind(me.id).first<{hash:string;salt:string}>())!;

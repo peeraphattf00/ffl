@@ -19,17 +19,20 @@ const snapshot=()=>query('SELECT id,payload,version FROM league; SELECT * FROM s
 const q=s=>s.replace(/'/g,"''");
 // Database as the current production code leaves it: first migration, league row, shared password, a live session and a rate-limit row.
 d1('--file',journal[0]);
-file('seed.sql',`INSERT INTO league (id,payload,version) VALUES ('main','${q(payload)}',${version});INSERT INTO settings (id,hash,salt) VALUES ('password','legacy-hash','legacy-salt');INSERT INTO sessions (id,expires) VALUES ('legacy-session',${Date.now()+43200000});INSERT INTO attempts (id,count,reset) VALUES ('ip-hash',3,${Date.now()+900000});`);
+file('seed.sql',`INSERT INTO league (id,payload,version) VALUES ('main','${q(payload)}',${version});INSERT INTO settings (id,hash,salt) VALUES ('password','legacy-hash','legacy-salt');INSERT INTO sessions (id,expires) VALUES ('legacy-session',${Date.now()+43200000});INSERT INTO attempts (id,count,reset) VALUES ('ip-hash',3,${Date.now()+900000});INSERT INTO attempts (id,count,reset) VALUES ('legacy:ip-hash',2,${Date.now()+900000});`);
 const before=snapshot();
 for(const m of journal.slice(1))d1('--file',m);
 const after=snapshot();
-assert.deepEqual(after,before,'existing rows changed during migration');
+// Only the migration that retires the shared password may remove rows, and only the shared-password ones; everything else must be byte-identical.
+const retired=journal.some(m=>m.endsWith('_retire_shared_password.sql'));
+const expected=retired?[before[0],before[1].filter(r=>r.id!=='password'),before[2].filter(r=>r.id!=='legacy-session'),before[3].filter(r=>!r.id.startsWith('legacy:'))]:before;
+assert.deepEqual(after,expected,'existing rows changed during migration');
 const migrated=JSON.parse(after[0][0].payload);assert.equal(after[0][0].payload,payload,'league payload bytes changed');assert.equal(after[0][0].version,version,'league version changed');
 const latest=s=>s.matches.filter(m=>m.hs!==null).map(m=>[m.id,m.hs,m.as,m.revision]);
 for(const season of state.seasons)assert.deepEqual(standings(migrated,season.id),standings(state,season.id),`standings changed in ${season.name}`);
 assert.deepEqual(latest(migrated),latest(state),'results changed');assert.deepEqual(migrated.history,state.history,'history changed');assert.deepEqual(migrated.profiles.map(p=>[p.id,p.badge]),state.profiles.map(p=>[p.id,p.badge]),'badges changed');
-const [[legacy]]=query("SELECT user_id FROM sessions WHERE id='legacy-session'");assert.equal(legacy.user_id,null,'legacy session must keep a null user_id');
+if(!retired){const [[legacy]]=query("SELECT user_id FROM sessions WHERE id='legacy-session'");assert.equal(legacy.user_id,null,'legacy session must keep a null user_id')}
 const [[{n}]]=query('SELECT count(*) AS n FROM users');assert.equal(n,0,'migration must not create accounts');
 query(`INSERT INTO sessions (id,expires) VALUES ('old-code-insert',${Date.now()})`);// rollback: the pre-migration code inserts sessions without user_id
 rmSync(dir,{recursive:true,force:true});
-console.log(`PASS ${journal.length} migrations on ${source||'synthetic data'} · version ${version} · ${state.seasons.length} seasons · ${state.matches.length} matches · ${state.history.length} history · rows byte-identical, standings/results/history/badges unchanged, legacy session kept, old-code session insert works`);
+console.log(`PASS ${journal.length} migrations on ${source||'synthetic data'} · version ${version} · ${state.seasons.length} seasons · ${state.matches.length} matches · ${state.history.length} history · league row byte-identical, standings/results/history/badges unchanged, ${retired?'only shared-password rows removed':'other rows byte-identical, legacy session kept'}, old-code session insert works`);

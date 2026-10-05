@@ -17,7 +17,7 @@ export default function Members({data}:{data:Data}){
  const [users,setUsers]=useState<User[]|null>(null),[error,setError]=useState(''),[confirm,setConfirm]=useState<Confirm|null>(null),[creating,setCreating]=useState(false),[temp,setTemp]=useState<{username:string;password:string}|null>(null),[busy,setBusy]=useState(false);
  const load=useCallback(()=>fetchUsers().then(u=>{setUsers(u);setError('')},e=>setError((e as Error).message)),[]);
  useEffect(()=>{let live=true;fetchUsers().then(u=>{if(live)setUsers(u)},e=>{if(live)setError((e as Error).message)});return()=>{live=false}},[]);
- const profile=(id:string)=>data.state.profiles.find(p=>p.id===id);const me=data.me&&!data.me.legacy?data.me:null;
+ const profile=(id:string)=>data.state.profiles.find(p=>p.id===id);const me=data.me;
  async function act(body:Record<string,unknown>,okText:string){setBusy(true);try{const d=await post('/api/users',body) as {users:User[];password?:string};setUsers(d.users);if(d.password){const u=d.users.find(x=>x.id===body.id||x.username===body.username);setTemp({username:u?.username||String(body.username),password:d.password})}else toast.success(okText)}finally{setBusy(false)}}
  const ask=(c:Confirm)=>setConfirm(c);
  return <><div className="section-title"><div><p className="eyebrow">MEMBERS</p><h2>สมาชิก</h2></div><Button onClick={()=>setCreating(true)} disabled={!users}><Plus size={16}/> สร้างบัญชี</Button></div>

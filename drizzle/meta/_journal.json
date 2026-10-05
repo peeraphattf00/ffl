@@ -15,6 +15,13 @@
       "when": 1791176188396,
       "tag": "0001_users",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791180240142,
+      "tag": "0002_retire_shared_password",
+      "breakpoints": true
     }
   ]
 }

@@ -14,7 +14,7 @@ The Site audience is public (decided 2026-10-05, FFL-4): anonymous visitors can 
 
 Editing uses member accounts (`users`): one account per league profile, role `admin` or `member`. Members can edit all league data; admins can also manage accounts. The verified owner creates the first admin once (`POST /api/auth` `bootstrap`, refused once any admin exists). Admins create accounts, reset passwords, disable/enable accounts and change roles (`/api/users`); new and reset accounts get a 12-character temporary password shown once, stored only as a hash, and must replace it before any other request succeeds. Changing a password revokes the account's other sessions; resetting or disabling revokes all of them. The last enabled admin cannot be disabled or demoted. Passwords are PBKDF2 SHA-256 hashes compared in constant time; sessions are HTTP-only, same-site cookies expiring after 12 hours, and `sessions.user_id` binds them to an account. Sign-in errors do not reveal whether a username exists, and only failures are rate limited: 5 per username and address and 20 per address per 15 minutes. Score history records the editor's profile id in `History.by`.
 
-During the transition the shared editing password still works (`POST /api/league` `login`; its sessions have no `user_id`), can edit league data but cannot manage accounts, and is recorded as `legacy` in history. It is removed once every member has an account.
+The shared editing password used before accounts has been retired (migration `0002_retire_shared_password` deletes the `settings.password` row, sessions without `user_id` and their rate-limit rows; the API no longer has `login`/`setup` on `/api/league` and rejects any session without an account). History events it recorded keep `by: 'legacy'` and show as แก้ด้วยรหัสกลาง.
 
 ## Migrations, backup and rollback
 
@@ -28,12 +28,12 @@ Schema changes are additive only: new tables, new nullable columns and new index
 
 ## Verification
 
-- `npm test` runs the league, migration and member-account tests; it builds first and needs no running dev server
+- `npm test` runs the league, migration, member-account and league API tests; it builds first and needs no running dev server
 - `node node_modules/typescript/bin/tsc --noEmit`
 - `node scripts/test-league.mjs`
-- `node scripts/test-members.mjs` (after a build; starts `wrangler dev` on a throwaway D1 in `.wrangler/test-members`, port 8791 or `TEST_PORT`)
+- `node scripts/test-members.mjs` (after a build; `scripts/test-server.mjs` starts `wrangler dev` on a throwaway D1 in `.wrangler/test-server`, port 8791 or `TEST_PORT`)
 - `node scripts/test-migration.mjs` (optionally with a `backups/<timestamp>/league.json`)
-- `node scripts/test-api.mjs` (fresh local D1 only, localhost:5173; creates test records and a temporary random test password)
+- `node scripts/test-api.mjs` (after a build; same harness on port 8792 or `TEST_PORT`)
 - `node scripts/run-framework.mjs build`
 
 Local database files and R2 test uploads are ignored and never included in deployment. Production starts with KEVIN, Dioxzyp, YEPPO, EKAI and Season 01, without match results.

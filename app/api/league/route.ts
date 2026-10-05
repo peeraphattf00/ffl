@@ -1,20 +1,12 @@
 import {z} from 'zod';
-import {db,readState,saveState,owner,passwordHash,digest,originCheck,json,bucket} from '@/lib/server';
-import {session,requireEditor,actor,startSession,clearCookie,sessionToken,checkPassword,ipKey,assertNotLimited,recordFailure,clearFailures,failure,LIMITS,type Me} from '@/lib/auth';
+import {db,readState,saveState,owner,originCheck,json,bucket} from '@/lib/server';
+import {session,requireEditor,actor,failure,type Me} from '@/lib/auth';
 import {fixtures,type Profile} from '@/lib/league';
 export const dynamic='force-dynamic';
 const name=z.string().trim().min(1).max(60), id=z.string().min(1).max(100),score=z.number().int().min(0).max(99).nullable();
-export async function GET(req:Request){try{const data=await readState();const configured=!!await db().prepare('SELECT id FROM settings WHERE id=?').bind('password').first();const hasAdmin=!!await db().prepare("SELECT id FROM users WHERE role='admin' LIMIT 1").first();const me:Me|null=(await session(req))?.me??null;return json({...data,me,authenticated:!!me&&(me.legacy||!me.mustChangePassword),configured,hasAdmin,setupAllowed:owner(req)})}catch(e){console.error(e);return json({error:'โหลดข้อมูลไม่ได้ กรุณาลองใหม่อีกครั้ง'},503)}}
+export async function GET(req:Request){try{const data=await readState();const hasAdmin=!!await db().prepare("SELECT id FROM users WHERE role='admin' LIMIT 1").first();const me:Me|null=(await session(req))?.me??null;return json({...data,me,authenticated:!!me&&!me.mustChangePassword,hasAdmin,setupAllowed:owner(req)})}catch(e){console.error(e);return json({error:'โหลดข้อมูลไม่ได้ กรุณาลองใหม่อีกครั้ง'},503)}}
 export async function POST(req:Request){try{
  originCheck(req);if(Number(req.headers.get('content-length')||0)>20000)return json({error:'ข้อมูลใหญ่เกินไป'},413);const b=z.record(z.unknown()).parse(await req.json());
- if(b.action==='login'||b.action==='setup'){
- const password=z.string().min(8).max(128).parse(b.password);const key='legacy:'+await ipKey(req);await assertNotLimited([key,LIMITS.legacy]);
- let config=await db().prepare('SELECT hash,salt FROM settings WHERE id=?').bind('password').first<{hash:string;salt:string}>();
- if(b.action==='setup'){if(config||!owner(req))return json({error:'เฉพาะเจ้าของเว็บไซต์สามารถตั้งรหัสครั้งแรกได้'},403);const salt=crypto.randomUUID();const hash=await passwordHash(password,salt);await db().prepare('INSERT INTO settings (id,hash,salt) VALUES (?,?,?)').bind('password',hash,salt).run();config={salt,hash}}
- if(!config||!await checkPassword(password,config.salt,config.hash)){await recordFailure(key);return json({error:'รหัสกลางไม่ถูกต้อง'},401)}
- await clearFailures(key);return json({ok:true},200,{'Set-Cookie':await startSession(req,null)})
- }
- if(b.action==='logout'){const token=sessionToken(req);if(token)await db().prepare('DELETE FROM sessions WHERE id=?').bind(await digest(token)).run();return json({ok:true},200,{'Set-Cookie':clearCookie})}
  const me=await requireEditor(req);
  const {state:s,version}=await readState();if(b.version!==version)return json({error:'เพื่อนเพิ่งแก้ไขข้อมูล กรุณาโหลดล่าสุดก่อนบันทึก'},409);
  let eventId:string|undefined;
