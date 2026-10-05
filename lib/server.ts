@@ -1,6 +1,7 @@
 import {env} from 'cloudflare:workers';
 import {initialState,type LeagueState} from './league';
 export function db(){if(!env.DB)throw new Error('ฐานข้อมูลยังไม่พร้อม กรุณาลองใหม่');return env.DB}
+export function lineConfig(){return env.LINE_CHANNEL_TOKEN&&env.LINE_GROUP_ID?{token:env.LINE_CHANNEL_TOKEN,to:env.LINE_GROUP_ID}:null}
 export function bucket(){if(!env.BUCKET)throw new Error('พื้นที่เก็บรูปยังไม่พร้อม');return env.BUCKET}
 export async function readState(){await db().prepare('INSERT OR IGNORE INTO league (id,payload,version) VALUES (?,?,0)').bind('main',JSON.stringify(initialState())).run();const row=await db().prepare('SELECT payload,version FROM league WHERE id=?').bind('main').first<{payload:string;version:number}>();return {state:JSON.parse(row!.payload) as LeagueState,version:row!.version}}
 export async function saveState(state:LeagueState,version:number){const r=await db().prepare('UPDATE league SET payload=?,version=version+1 WHERE id=? AND version=?').bind(JSON.stringify(state),'main',version).run();if(!r.meta.changes)throw new Error('ข้อมูลเปลี่ยนโดยผู้ใช้อื่น กรุณาโหลดข้อมูลล่าสุดแล้วลองใหม่')}

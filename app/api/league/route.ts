@@ -1,8 +1,9 @@
 import {z} from 'zod';
-import {db,readState,saveState,owner,originCheck,json,bucket} from '@/lib/server';
+import {db,readState,saveState,owner,originCheck,json,bucket,lineConfig} from '@/lib/server';
 import {session,requireEditor,actor,failure,HttpError,type Me} from '@/lib/auth';
 import {can,isAction} from '@/lib/permissions';
-import {fixtures,type Profile} from '@/lib/league';
+import {fixtures,standings,type Profile} from '@/lib/league';
+import {scoreMessage,pushLine,type LineResult} from '@/lib/line';
 export const dynamic='force-dynamic';
 const name=z.string().trim().min(1).max(60), id=z.string().min(1).max(100),score=z.number().int().min(0).max(99).nullable();
 export async function GET(req:Request){try{const data=await readState();const hasAdmin=!!await db().prepare("SELECT id FROM users WHERE role='admin' LIMIT 1").first();const me:Me|null=(await session(req))?.me??null;return json({...data,me,authenticated:!!me&&!me.mustChangePassword,hasAdmin,setupAllowed:owner(req)})}catch(e){console.error(e);return json({error:'โหลดข้อมูลไม่ได้ กรุณาลองใหม่อีกครั้ง'},503)}}
@@ -14,7 +15,7 @@ export async function POST(req:Request){try{
  const p=b.action==='profile'?z.object({id:id.optional(),name,team:z.string().trim().max(60),badge:z.string().max(150),active:z.boolean()}).parse(b.profile):undefined;
  if(isAction(b.action)){const v=can(me,b.action,p&&{id:p.id,active:p.active,current:s.profiles.find(x=>x.id===p.id)});if(!v.ok)throw new HttpError(403,v.reason)}
  if(b.version!==version)return json({error:'เพื่อนเพิ่งแก้ไขข้อมูล กรุณาโหลดล่าสุดก่อนบันทึก'},409);
- let eventId:string|undefined;
+ let eventId:string|undefined,notify:(()=>Promise<LineResult>)|undefined;
  if(p){
  if(p.badge&&!/^badges\/[0-9a-f-]+\.(png|jpg|webp)$/.test(p.badge))throw new Error('รูปไม่ถูกต้อง');if(p.badge&&!await bucket().head(p.badge))throw new Error('ไม่พบรูป กรุณาอัปโหลดใหม่');if(s.profiles.some(x=>x.name.toLowerCase()===p.name.toLowerCase()&&x.id!==p.id))throw new Error('มีชื่อผู้เล่นนี้แล้ว');const old=s.profiles.find(x=>x.id===p.id);if(p.id&&!old)throw new Error('ไม่พบผู้เล่น');if(old)Object.assign(old,p);else s.profiles.push({...p,id:crypto.randomUUID()} as Profile);
  }else if(b.action==='season'){
@@ -27,6 +28,7 @@ export async function POST(req:Request){try{
  const m=s.matches.find(x=>x.id===b.id);if(!m)throw new Error('ไม่พบคู่แข่งขัน');if(s.competitions.find(c=>c.id===m.competitionId)?.archived)throw new Error('กู้คืนโปรแกรมก่อนแก้ไขผล');let hs=score.parse(b.hs??null),as=score.parse(b.as??null);
  if(b.action==='restore'){const event=s.history.find(h=>h.id===b.eventId&&h.matchId===m.id);if(!event)throw new Error('ไม่พบประวัติ');if(b.undo&&(event.revision!==m.revision||Date.now()-Date.parse(event.time)>30000))throw new Error('Undo หมดเวลาหรือมีผลใหม่แล้ว ใช้ประวัติเพื่อคืนค่าแทน');[hs,as]=event.before}
  if((hs===null)!==(as===null))throw new Error('กรุณาระบุสกอร์ทั้งสองทีม');if(m.hs===hs&&m.as===as)throw new Error('ผลไม่เปลี่ยนแปลง');eventId=crypto.randomUUID();s.history.unshift({id:eventId,matchId:m.id,before:[m.hs,m.as],after:[hs,as],time:new Date().toISOString(),revision:m.revision+1,kind:b.action==='restore'?'คืนค่า':hs===null?'ล้างผล':'บันทึกผล',by:actor(me)});m.hs=hs;m.as=as;m.revision++;
+ if(b.action==='score'&&hs!==null){const line=lineConfig(),event=s.history[0],comp=s.competitions.find(c=>c.id===m.competitionId);notify=async()=>line?pushLine({...line,text:scoreMessage(s,m,event,comp?standings(s,comp.seasonId):[]),retryKey:event.id}):'off'}
  }else throw new Error('คำสั่งไม่ถูกต้อง');
- await saveState(s,version);return json({ok:true,eventId});
+ await saveState(s,version);return json({ok:true,eventId,line:notify?await notify():undefined});
  }catch(e){return failure(e)}}

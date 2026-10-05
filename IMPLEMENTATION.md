@@ -43,11 +43,27 @@ Schema changes are additive only: new tables, new nullable columns and new index
 - **Data restore:** `league.json` holds the exact `state` and `version`. There is no restore endpoint; writing it back needs either platform access to the Site's D1 or a temporary owner-only restore action. Badges can be re-uploaded from `backups/<timestamp>/badges/` through the profile editor.
 - **After the shared password is removed:** rolling code back to a shared-password release shows first-time setup again, and the verified owner sets a new shared password.
 
+## LINE notifications
+
+After a `score` action saves a non-empty result (new or edited), the server pushes a text summary (program, match, score, previous score if edited, who recorded it from `History.by`, top 4) to one LINE group via the Messaging API. Clearing, Undo and restore do not notify yet. The push runs after `requireEditor()`, `can()` and `saveState`, uses a 5-second timeout and `X-Line-Retry-Key` = event id, and never fails the save; the response carries `line: off | sent | failed` and the UI warns on `failed`.
+
+Secrets (Site environment secrets in production; locally in `.dev.vars`, see `.dev.vars.example`, git-ignored and not copied into `dist/`):
+- `LINE_CHANNEL_TOKEN` — LINE Developers Console → channel → Messaging API → Channel access token (long-lived) → Issue
+- `LINE_CHANNEL_SECRET` — Basic settings → Channel secret (webhook signature only)
+- `LINE_GROUP_ID` — target group (`C…`)
+
+Notifications are off when the token or group id is unset (as in `npm test`, whose server reads env files next to `dist/server/wrangler.json` only). Enable "Allow bot to join group chats" and disable auto-reply in OA Manager.
+
+Getting the group id once: run `npm run dev` with the secret in `.dev.vars`, expose it with `cloudflared tunnel --url http://localhost:5173 --http-host-header localhost:5173`, set the Messaging API webhook URL to `<tunnel>/api/line/webhook`, invite the bot to the group (or post in it), and read `LINE join groupId: C…` from the dev log. The webhook only verifies `X-Line-Signature` and logs; turn the webhook off afterwards.
+
+Quota: a push to a group counts one message per group member against the OA's monthly allowance.
+
 ## Verification
 
-- `npm test` runs the league, permission, migration, member-account and league API tests; it builds first and needs no running dev server
+- `npm test` runs the league, LINE message, permission, migration, member-account and league API tests; it builds first and needs no running dev server
 - `node node_modules/typescript/bin/tsc --noEmit`
 - `node scripts/test-league.mjs`
+- `node scripts/test-line.mjs` (message text, push with a fake fetch, webhook signature; never calls LINE)
 - `node scripts/test-permissions.mjs` (permission table, no server)
 - `node scripts/test-members.mjs` (after a build; `scripts/test-server.mjs` starts `wrangler dev` on a throwaway D1 in `.wrangler/test-server`, port 8791 or `TEST_PORT`)
 - `node scripts/test-migration.mjs` (optionally with a `backups/<timestamp>/league.json`)

@@ -46,3 +46,6 @@ next-env.d.ts
 /work/
 # League data backups (scripts/backup-league.mjs); keep out of Git.
 /backups/
+
+# LINE secrets for local dev
+.dev.vars
