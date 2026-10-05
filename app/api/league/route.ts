@@ -1,22 +1,21 @@
 import {z} from 'zod';
-import {db,readState,saveState,authorized,owner,passwordHash,digest,originCheck,json,bucket} from '@/lib/server';
+import {db,readState,saveState,owner,passwordHash,digest,originCheck,json,bucket} from '@/lib/server';
+import {session,requireEditor,startSession,clearCookie,sessionToken,checkPassword,ipKey,assertNotLimited,recordFailure,clearFailures,failure,LIMITS,type Me} from '@/lib/auth';
 import {fixtures,type Profile} from '@/lib/league';
 export const dynamic='force-dynamic';
 const name=z.string().trim().min(1).max(60), id=z.string().min(1).max(100),score=z.number().int().min(0).max(99).nullable();
-export async function GET(req:Request){try{const data=await readState();const configured=!!await db().prepare('SELECT id FROM settings WHERE id=?').bind('password').first();return json({...data,authenticated:await authorized(req),configured,setupAllowed:owner(req)})}catch(e){console.error(e);return json({error:'โหลดข้อมูลไม่ได้ กรุณาลองใหม่อีกครั้ง'},503)}}
+export async function GET(req:Request){try{const data=await readState();const configured=!!await db().prepare('SELECT id FROM settings WHERE id=?').bind('password').first();const hasAdmin=!!await db().prepare("SELECT id FROM users WHERE role='admin' LIMIT 1").first();const me:Me|null=(await session(req))?.me??null;return json({...data,me,authenticated:!!me&&(me.legacy||!me.mustChangePassword),configured,hasAdmin,setupAllowed:owner(req)})}catch(e){console.error(e);return json({error:'โหลดข้อมูลไม่ได้ กรุณาลองใหม่อีกครั้ง'},503)}}
 export async function POST(req:Request){try{
  originCheck(req);if(Number(req.headers.get('content-length')||0)>20000)return json({error:'ข้อมูลใหญ่เกินไป'},413);const b=z.record(z.unknown()).parse(await req.json());
  if(b.action==='login'||b.action==='setup'){
- const password=z.string().min(8).max(128).parse(b.password);const ip=await digest(req.headers.get('cf-connecting-ip')||'local');const now=Date.now();
- await db().prepare('INSERT INTO attempts (id,count,reset) VALUES (?,1,?) ON CONFLICT(id) DO UPDATE SET count=CASE WHEN reset<? THEN 1 ELSE count+1 END,reset=CASE WHEN reset<? THEN ? ELSE reset END').bind(ip,now+900000,now,now,now+900000).run();
- const attempt=await db().prepare('SELECT count FROM attempts WHERE id=?').bind(ip).first<{count:number}>();if(attempt!.count>10)return json({error:'ลองรหัสหลายครั้งเกินไป กรุณารอ 15 นาที'},429);
+ const password=z.string().min(8).max(128).parse(b.password);const key='legacy:'+await ipKey(req);await assertNotLimited([key,LIMITS.legacy]);
  let config=await db().prepare('SELECT hash,salt FROM settings WHERE id=?').bind('password').first<{hash:string;salt:string}>();
  if(b.action==='setup'){if(config||!owner(req))return json({error:'เฉพาะเจ้าของเว็บไซต์สามารถตั้งรหัสครั้งแรกได้'},403);const salt=crypto.randomUUID();const hash=await passwordHash(password,salt);await db().prepare('INSERT INTO settings (id,hash,salt) VALUES (?,?,?)').bind('password',hash,salt).run();config={salt,hash}}
- if(!config||await passwordHash(password,config.salt)!==config.hash)return json({error:'รหัสกลางไม่ถูกต้อง'},401);
- const token=crypto.randomUUID()+crypto.randomUUID();await db().prepare('INSERT INTO sessions (id,expires) VALUES (?,?)').bind(await digest(token),now+43200000).run();await db().prepare('DELETE FROM sessions WHERE expires<?').bind(now).run();return json({ok:true},200,{'Set-Cookie':`ffl_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=43200${new URL(req.url).protocol==='https:'?'; Secure':''}`})
+ if(!config||!await checkPassword(password,config.salt,config.hash)){await recordFailure(key);return json({error:'รหัสกลางไม่ถูกต้อง'},401)}
+ await clearFailures(key);return json({ok:true},200,{'Set-Cookie':await startSession(req,null)})
  }
- if(!await authorized(req))return json({error:'กรุณาใส่รหัสกลางก่อนแก้ไขข้อมูล'},401);
- if(b.action==='logout'){const token=req.headers.get('cookie')?.match(/(?:^|;\s*)ffl_session=([^;]+)/)?.[1];if(token)await db().prepare('DELETE FROM sessions WHERE id=?').bind(await digest(token)).run();return json({ok:true},200,{'Set-Cookie':'ffl_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0'})}
+ if(b.action==='logout'){const token=sessionToken(req);if(token)await db().prepare('DELETE FROM sessions WHERE id=?').bind(await digest(token)).run();return json({ok:true},200,{'Set-Cookie':clearCookie})}
+ await requireEditor(req);
  const {state:s,version}=await readState();if(b.version!==version)return json({error:'เพื่อนเพิ่งแก้ไขข้อมูล กรุณาโหลดล่าสุดก่อนบันทึก'},409);
  let eventId:string|undefined;
  if(b.action==='profile'){
@@ -33,4 +32,4 @@ export async function POST(req:Request){try{
  if((hs===null)!==(as===null))throw new Error('กรุณาระบุสกอร์ทั้งสองทีม');if(m.hs===hs&&m.as===as)throw new Error('ผลไม่เปลี่ยนแปลง');eventId=crypto.randomUUID();s.history.unshift({id:eventId,matchId:m.id,before:[m.hs,m.as],after:[hs,as],time:new Date().toISOString(),revision:m.revision+1,kind:b.action==='restore'?'คืนค่า':hs===null?'ล้างผล':'บันทึกผล'});m.hs=hs;m.as=as;m.revision++;
  }else throw new Error('คำสั่งไม่ถูกต้อง');
  await saveState(s,version);return json({ok:true,eventId});
- }catch(e){console.error(e);return json({error:e instanceof z.ZodError?'กรุณาตรวจข้อมูลให้ครบและถูกต้อง':e instanceof Error?e.message:'บันทึกไม่สำเร็จ'},400)}}
+ }catch(e){return failure(e)}}
