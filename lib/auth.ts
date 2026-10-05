@@ -39,4 +39,6 @@ export async function login(req:Request,name:string,password:string){
 // Temporary passwords: 12 characters without look-alikes (0/O, 1/l/I), shown as xxxx-xxxx-xxxx.
 const ALPHABET='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
 export function tempPassword(){const out:string[]=[];while(out.length<12){for(const b of crypto.getRandomValues(new Uint8Array(16)))if(out.length<12&&b<ALPHABET.length*4)out.push(ALPHABET[b%ALPHABET.length])}return out.join('').replace(/(.{4})(?=.)/g,'$1-')}
+// Turn a users UNIQUE violation into a readable 409.
+export const unique=(e:unknown)=>e instanceof Error&&/UNIQUE constraint failed: (users\.profile_id|index 'users_username_lower'|users\.username)/.test(e.message)?new HttpError(409,e.message.includes('profile_id')?'โปรไฟล์นี้มีบัญชีแล้ว':'ชื่อผู้ใช้นี้ถูกใช้แล้ว'):e;
 export function failure(e:unknown){if(e instanceof HttpError)return json({error:e.message},e.status);console.error(e);if(e instanceof z.ZodError)return json({error:e.issues.find(i=>i.message&&!i.message.startsWith('Expected')&&!i.message.startsWith('Required'))?.message||'กรุณาตรวจข้อมูลให้ครบและถูกต้อง'},400);return json({error:e instanceof Error?e.message:'บันทึกไม่สำเร็จ'},400)}
