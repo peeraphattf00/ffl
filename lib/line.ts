@@ -1,17 +1,24 @@
 import type {LeagueState,Match,History,standings} from './league';
 export type LineResult='off'|'sent'|'failed';
 type Table=ReturnType<typeof standings>;
-const fmt=([h,a]:[number|null,number|null])=>`${h}–${a}`;
-export function scoreMessage(s:LeagueState,m:Match,event:History,table:Table){
+type Score=[number|null,number|null];
+const fmt=([h,a]:Score)=>`${h}–${a}`,scored=([h]:Score)=>h!==null;
+function message(s:LeagueState,m:Match,event:History,table:Table,title:string,score:Score,note:string|undefined,verb:string){
  const name=(id:string)=>s.profiles.find(p=>p.id===id)?.name??'?';const comp=s.competitions.find(c=>c.id===m.competitionId);
- const lines=[`⚽ บันทึกผล · ${comp?.name??'FC Friends League'}`,`${name(m.home)} ${fmt(event.after)} ${name(m.away)}`];
- if(event.before[0]!==null&&event.before[1]!==null)lines.push(`(แก้จาก ${fmt(event.before)})`);
- if(event.by)lines.push(event.by==='legacy'?'✍️ บันทึกด้วยรหัสกลาง':`✍️ บันทึกโดย ${name(event.by)}`);
+ const lines=[`${title} · ${comp?.name??'FC Friends League'}`,`${name(m.home)} ${fmt(score)} ${name(m.away)}`];
+ if(note)lines.push(note);
+ if(event.by)lines.push(event.by==='legacy'?`✍️ ${verb}ด้วยรหัสกลาง`:`✍️ ${verb}โดย ${name(event.by)}`);
  if(table.length)lines.push('','🏆 อันดับ',...table.slice(0,4).map((r,i)=>`${i+1}. ${r.profile.name} ${r.points} แต้ม`));
  return lines.join('\n');
 }
-export async function pushLine({token,to,text,retryKey,fetchImpl=fetch}:{token:string;to:string;text:string;retryKey:string;fetchImpl?:typeof fetch}):Promise<LineResult>{
- try{const r=await fetchImpl('https://api.line.me/v2/bot/message/push',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`,'X-Line-Retry-Key':retryKey},body:JSON.stringify({to,messages:[{type:'text',text}]}),signal:AbortSignal.timeout(5000)});
+// A recorded score (new or edited) — event.after always holds a score here.
+export const scoreMessage=(s:LeagueState,m:Match,event:History,table:Table)=>message(s,m,event,table,'⚽ บันทึกผล',event.after,scored(event.before)?`(แก้จาก ${fmt(event.before)})`:undefined,'บันทึก');
+// Undo, clear or restore of a match whose result already reached LINE: cancelled (after is empty) or changed to another score.
+export const correctionMessage=(s:LeagueState,m:Match,event:History,table:Table)=>scored(event.after)
+ ?message(s,m,event,table,'✏️ แก้ผล',event.after,scored(event.before)?`(จาก ${fmt(event.before)})`:undefined,'แก้')
+ :message(s,m,event,table,'↩️ ยกเลิกผล',event.before,undefined,'ยกเลิก');
+export async function pushLine({token,to,text,retryKey,api='https://api.line.me',fetchImpl=fetch}:{token:string;to:string;text:string;retryKey:string;api?:string;fetchImpl?:typeof fetch}):Promise<LineResult>{
+ try{const r=await fetchImpl(`${api}/v2/bot/message/push`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`,'X-Line-Retry-Key':retryKey},body:JSON.stringify({to,messages:[{type:'text',text}]}),signal:AbortSignal.timeout(5000)});
  if(r.ok||r.status===409)return 'sent';console.error('LINE push failed',r.status,await r.text().catch(()=>''));return 'failed'}
  catch(e){console.error('LINE push failed',e);return 'failed'}
 }

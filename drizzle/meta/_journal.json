@@ -22,6 +22,13 @@
       "when": 1791180240142,
       "tag": "0002_retire_shared_password",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1791189647673,
+      "tag": "0003_line_notifications",
+      "breakpoints": true
     }
   ]
 }

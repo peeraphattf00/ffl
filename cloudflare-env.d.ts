@@ -6,5 +6,6 @@ declare namespace Cloudflare {
     LINE_CHANNEL_SECRET?: string;
     LINE_GROUP_ID?: string;
     LINE_WEBHOOK?: string;
+    LINE_API_BASE?: string;
   }
 }

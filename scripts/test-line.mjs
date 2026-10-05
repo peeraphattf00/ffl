@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {createHmac} from 'node:crypto';
 import {initialState,fixtures,standings} from '../lib/league.ts';
-import {scoreMessage,pushLine,verifySignature} from '../lib/line.ts';
+import {scoreMessage,correctionMessage,pushLine,verifySignature} from '../lib/line.ts';
 const s=initialState();s.competitions.push({id:'c1',name:'คืนวันศุกร์',date:'2026-10-05',seasonId:'season-1',players:s.profiles.map(p=>p.id),legs:1,archived:false});s.matches.push(...fixtures(s.profiles.map(p=>p.id),1,'c1'));
 const m=s.matches[0];m.hs=2;m.as=1;m.revision=1;const ev={id:crypto.randomUUID(),matchId:m.id,before:[null,null],after:[2,1],time:new Date().toISOString(),revision:1,kind:'บันทึกผล'};
 const name=id=>s.profiles.find(p=>p.id===id).name;
@@ -19,4 +19,8 @@ assert.equal(await pushLine({token:'t',to:'C1',text:'hi',retryKey:ev.id,fetchImp
 console.error=quiet;
 const body='{"events":[]}',sig=createHmac('sha256','secret').update(body).digest('base64');
 assert.equal(await verifySignature(body,sig,'secret'),true);assert.equal(await verifySignature(body,sig,'other'),false);assert.equal(await verifySignature(body,null,'secret'),false);
+text=correctionMessage(s,m,{...ev,before:[2,1],after:[null,null],by:'player-2'},[]);assert.ok(text.startsWith('↩️ ยกเลิกผล · คืนวันศุกร์'));assert.ok(text.includes(`${name(m.home)} 2–1 ${name(m.away)}`));assert.ok(text.includes(`✍️ ยกเลิกโดย ${name('player-2')}`));assert.ok(!text.includes('(จาก'));
+text=correctionMessage(s,m,{...ev,before:[2,1],after:[1,1]},standings(s,'season-1'));assert.ok(text.startsWith('✏️ แก้ผล · คืนวันศุกร์'));assert.ok(text.includes(`${name(m.home)} 1–1 ${name(m.away)}`));assert.ok(text.includes('(จาก 2–1)'));assert.ok(text.includes('🏆 อันดับ'));
+text=correctionMessage(s,m,{...ev,before:[null,null],after:[3,0],by:'legacy'},[]);assert.ok(text.startsWith('✏️ แก้ผล'));assert.ok(!text.includes('(จาก'));assert.ok(text.includes('✍️ แก้ด้วยรหัสกลาง'));
+assert.equal(await pushLine({token:'t',to:'C1',text:'hi',retryKey:ev.id,api:'http://localhost:9',fetchImpl:fake(200)}),'sent');assert.equal(req.url,'http://localhost:9/v2/bot/message/push');
 console.log('line tests passed');

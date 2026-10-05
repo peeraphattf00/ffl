@@ -13,7 +13,7 @@ export const sessionId=token=>createHash('sha256').update(token).digest('hex');
 export const sql=s=>s.replace(/'/g,"''");
 export const userRow=(id,username,profileId,role,password,{mustChange=0,disabled=0}={})=>`INSERT INTO users (id,username,profile_id,role,hash,salt,must_change_password,disabled,created_at) VALUES ('${id}','${username}','${profileId}','${role}','${hash(password,'salt-'+id)}','salt-${id}',${mustChange},${disabled},${Date.now()});`;
 export const OWNER={'oai-authenticated-user-id':'local_seedy'};// owner() trusts this header only on localhost
-export async function startServer({seed='',port=Number(process.env.TEST_PORT||8791)}={}){
+export async function startServer({seed='',port=Number(process.env.TEST_PORT||8791),vars={}}={}){
  if(!existsSync(join(root,'dist/server/wrangler.json')))throw new Error('Run `npm run build` first');
  const dir=join(root,'.wrangler','test-server',String(process.pid)),base=`http://localhost:${port}`;
  rmSync(dir,{recursive:true,force:true});mkdirSync(dir,{recursive:true});
@@ -21,7 +21,7 @@ export async function startServer({seed='',port=Number(process.env.TEST_PORT||87
  const run=args=>{const r=spawnSync(process.execPath,[wrangler,...args],{cwd:root,env,encoding:'utf8'});if(r.status!==0)throw new Error(r.stdout+r.stderr)};
  run(['d1','migrations','apply','site-creator-d1','--local','--persist-to',dir,'--config',config]);
  if(seed){writeFileSync(join(dir,'seed.sql'),seed);run(['d1','execute','site-creator-d1','--local','--persist-to',dir,'--config',config,'--file',join(dir,'seed.sql')])}
- const server=spawn(process.execPath,[wrangler,'dev','--config','dist/server/wrangler.json','--local','--persist-to',dir,'--ip','localhost','--port',String(port),'--inspector-port','0'],{cwd:root,env,stdio:['ignore','pipe','pipe']});
+ const server=spawn(process.execPath,[wrangler,'dev','--config','dist/server/wrangler.json','--local','--persist-to',dir,'--ip','localhost','--port',String(port),'--inspector-port','0',...Object.entries(vars).flatMap(([k,v])=>['--var',`${k}:${v}`])],{cwd:root,env,stdio:['ignore','pipe','pipe']});
  let log='';server.stdout.on('data',d=>log+=d);server.stderr.on('data',d=>log+=d);
  const stop=()=>{if(server.exitCode===null)spawnSync('taskkill',['/pid',String(server.pid),'/T','/F']);try{rmSync(dir,{recursive:true,force:true})}catch{}};
  process.on('exit',stop);

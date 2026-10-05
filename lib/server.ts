@@ -1,7 +1,17 @@
 import {env} from 'cloudflare:workers';
 import {initialState,type LeagueState} from './league';
+import {pushLine,type LineResult} from './line';
 export function db(){if(!env.DB)throw new Error('ฐานข้อมูลยังไม่พร้อม กรุณาลองใหม่');return env.DB}
-export function lineConfig(){return env.LINE_CHANNEL_TOKEN&&env.LINE_GROUP_ID?{token:env.LINE_CHANNEL_TOKEN,to:env.LINE_GROUP_ID}:null}
+// LINE_API_BASE only points tests at a fake LINE server; production leaves it unset.
+export function lineConfig(){return env.LINE_CHANNEL_TOKEN&&env.LINE_GROUP_ID?{token:env.LINE_CHANNEL_TOKEN,to:env.LINE_GROUP_ID,api:env.LINE_API_BASE||undefined}:null}
+// Call only after saveState. A correction goes out only if this match already had a result delivered to LINE; every attempt is logged in line_notifications. Never throws.
+export async function notifyLine(text:string,eventId:string,matchId:string,correction:boolean):Promise<LineResult>{
+ const line=lineConfig();if(!line)return 'off';
+ try{if(correction&&!await db().prepare("SELECT 1 FROM line_notifications WHERE match_id=? AND status='sent' LIMIT 1").bind(matchId).first())return 'off'}catch(e){console.error('LINE log read failed',e);return 'failed'}
+ const result=await pushLine({...line,text,retryKey:eventId});
+ try{await db().prepare('INSERT OR REPLACE INTO line_notifications (event_id,match_id,status,sent_at) VALUES (?,?,?,?)').bind(eventId,matchId,result,Date.now()).run()}catch(e){console.error('LINE log write failed',e)}
+ return result;
+}
 export function bucket(){if(!env.BUCKET)throw new Error('พื้นที่เก็บรูปยังไม่พร้อม');return env.BUCKET}
 export async function readState(){await db().prepare('INSERT OR IGNORE INTO league (id,payload,version) VALUES (?,?,0)').bind('main',JSON.stringify(initialState())).run();const row=await db().prepare('SELECT payload,version FROM league WHERE id=?').bind('main').first<{payload:string;version:number}>();return {state:JSON.parse(row!.payload) as LeagueState,version:row!.version}}
 export async function saveState(state:LeagueState,version:number){const r=await db().prepare('UPDATE league SET payload=?,version=version+1 WHERE id=? AND version=?').bind(JSON.stringify(state),'main',version).run();if(!r.meta.changes)throw new Error('ข้อมูลเปลี่ยนโดยผู้ใช้อื่น กรุณาโหลดข้อมูลล่าสุดแล้วลองใหม่')}

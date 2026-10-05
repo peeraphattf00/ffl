@@ -45,7 +45,9 @@ Schema changes are additive only: new tables, new nullable columns and new index
 
 ## LINE notifications
 
-After a `score` action saves a non-empty result (new or edited), the server pushes a text summary (program, match, score, previous score if edited, who recorded it from `History.by`, top 4) to one LINE group via the Messaging API. Clearing, Undo and restore do not notify yet. The push runs after `requireEditor()`, `can()` and `saveState`, uses a 5-second timeout and `X-Line-Retry-Key` = event id, and never fails the save; the response carries `line: off | sent | failed` and the UI warns on `failed`.
+After a `score` action saves a non-empty result (new or edited), the server pushes a text summary (program, match, score, previous score if edited, who recorded it from `History.by`, top 4) to one LINE group via the Messaging API. Clearing, Undo and restore send a correction instead (`↩️ ยกเลิกผล` when the match ends up empty, `✏️ แก้ผล … (จาก x–y)` when it ends up with another score, with who did it and the recalculated top 4), but only for a match that already had a result delivered to LINE, so the group never sees a stale result and is not told about results it never saw.
+
+Every push attempt is logged in `line_notifications` (`event_id` primary key, `match_id`, `status` `sent`/`failed`, `sent_at`; migration `0003_line_notifications`, a new table only). A correction is sent when the match has any `sent` row. The push runs after `requireEditor()`, `can()` and `saveState` (`notifyLine()` in `lib/server.ts`), uses a 5-second timeout and `X-Line-Retry-Key` = event id, and never fails the save, even if the log table is missing; the response carries `line: off | sent | failed` and the UI warns on `failed`. `LINE_API_BASE` exists only so tests can point the Worker at a fake LINE server.
 
 Configuration:
 - **Production:** `LINE_CHANNEL_TOKEN` and `LINE_GROUP_ID` are Site environment secrets (set 2026-10-05). Nothing else is needed there; `LINE_WEBHOOK` must stay unset.
@@ -64,7 +66,7 @@ Quota: a push to a group counts one message per group member against the OA's mo
 
 ## Verification
 
-- `npm test` runs the league, LINE message, permission, migration, member-account and league API tests; it builds first and needs no running dev server
+- `npm test` runs the league, LINE message, permission, migration, member-account, league API and LINE API tests; it builds first and needs no running dev server
 - `node node_modules/typescript/bin/tsc --noEmit`
 - `node scripts/test-league.mjs`
 - `node scripts/test-line.mjs` (message text, push with a fake fetch, webhook signature; never calls LINE)
@@ -72,6 +74,7 @@ Quota: a push to a group counts one message per group member against the OA's mo
 - `node scripts/test-members.mjs` (after a build; `scripts/test-server.mjs` starts `wrangler dev` on a throwaway D1 in `.wrangler/test-server`, port 8791 or `TEST_PORT`)
 - `node scripts/test-migration.mjs` (optionally with a `backups/<timestamp>/league.json`)
 - `node scripts/test-api.mjs` (after a build; same harness on port 8792 or `TEST_PORT`)
+- `node scripts/test-line-api.mjs` (after a build; same harness on port 8793 with a fake LINE API on 8799 or `TEST_LINE_PORT`: score push, undo/clear/restore corrections, LINE down, never-delivered results)
 - `node scripts/run-framework.mjs build`
 
 Local database files and R2 test uploads are ignored and never included in deployment. Production starts with KEVIN, Dioxzyp, YEPPO, EKAI and Season 01, without match results.
