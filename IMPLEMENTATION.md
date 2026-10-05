@@ -47,14 +47,18 @@ Schema changes are additive only: new tables, new nullable columns and new index
 
 After a `score` action saves a non-empty result (new or edited), the server pushes a text summary (program, match, score, previous score if edited, who recorded it from `History.by`, top 4) to one LINE group via the Messaging API. Clearing, Undo and restore do not notify yet. The push runs after `requireEditor()`, `can()` and `saveState`, uses a 5-second timeout and `X-Line-Retry-Key` = event id, and never fails the save; the response carries `line: off | sent | failed` and the UI warns on `failed`.
 
-Secrets (Site environment secrets in production; locally in `.dev.vars`, see `.dev.vars.example`, git-ignored and not copied into `dist/`):
+Configuration:
+- **Production:** `LINE_CHANNEL_TOKEN` and `LINE_GROUP_ID` are Site environment secrets (set 2026-10-05). Nothing else is needed there; `LINE_WEBHOOK` must stay unset.
+- **Local:** one file, `.env` at the project root (copy `.env.example`). It is git-ignored (`.env*` except `.env.example`) and never copied into `dist/`. `npm run dev` reads it (wrangler logs "Using secrets defined in .env"). Do not create a `.dev.vars`: wrangler prefers it over `.env` without warning. `npm start` and `npm test` run `wrangler dev --config dist/server/wrangler.json`, which looks for env files in `dist/server/` only, so LINE is off there and tests never call LINE.
+
+Variables:
 - `LINE_CHANNEL_TOKEN` — LINE Developers Console → channel → Messaging API → Channel access token (long-lived) → Issue
-- `LINE_CHANNEL_SECRET` — Basic settings → Channel secret (webhook signature only)
 - `LINE_GROUP_ID` — target group (`C…`)
+- `LINE_WEBHOOK=on` and `LINE_CHANNEL_SECRET` (Basic settings → Channel secret) — local only, while fetching the group id
 
-Notifications are off when the token or group id is unset (as in `npm test`, whose server reads env files next to `dist/server/wrangler.json` only). Enable "Allow bot to join group chats" and disable auto-reply in OA Manager.
+Notifications are off when the token or group id is unset. Enable "Allow bot to join group chats" and disable auto-reply in OA Manager.
 
-Getting the group id once: run `npm run dev` with the secret in `.dev.vars`, expose it with `cloudflared tunnel --url http://localhost:5173 --http-host-header localhost:5173`, set the Messaging API webhook URL to `<tunnel>/api/line/webhook`, invite the bot to the group (or post in it), and read `LINE join groupId: C…` from the dev log. The webhook only verifies `X-Line-Signature` and logs; turn the webhook off afterwards.
+`/api/line/webhook` answers 404 unless `LINE_WEBHOOK=on`, so it is inert on the public Site. Getting the group id again: set `LINE_WEBHOOK=on` and `LINE_CHANNEL_SECRET` in `.env`, run `npm run dev`, expose it with `cloudflared tunnel --url http://localhost:5173 --http-host-header localhost:5173` (the host header is needed because the Vite dev server rejects other hosts), set the Messaging API webhook URL to `<tunnel>/api/line/webhook` and turn on "Use webhook", invite the bot to the group (or post in it), and read `LINE join groupId: C…` from the dev log. The webhook verifies `X-Line-Signature` and only logs. Afterwards turn "Use webhook" off in the Console, clear the webhook URL and remove `LINE_WEBHOOK` from `.env`.
 
 Quota: a push to a group counts one message per group member against the OA's monthly allowance.
 
