@@ -88,6 +88,12 @@ await step('disable ends sessions and blocks login; enable keeps the password; l
  assert.equal((await n.league()).me,null,'disabled account must lose its session');await new Client().auth({action:'login',username:'newbie',password:'second-new-pass'},403);
  await admin.manage({action:'disable',id:r.users.find(u=>u.username==='newbie').id,disabled:false});await new Client().auth({action:'login',username:'newbie',password:'second-new-pass'});
  assert.ok((await admin.league()).state.profiles.some(p=>p.id===newProfile),'profile and history stay')});
+await step('role changes take effect immediately; last admin cannot be demoted',async()=>{const kevin=(await admin.league()).me.id;
+ await admin.manage({action:'role',id:kevin,role:'member'},400);await admin.manage({action:'role',id:kevin,role:'owner'},400);
+ const n=new Client();await n.auth({action:'login',username:'newbie',password:'second-new-pass'});await n.users(403);const newbie=(await n.league()).me.id;
+ await admin.manage({action:'role',id:newbie,role:'admin'});await n.users();
+ await admin.manage({action:'role',id:kevin,role:'member'});await admin.users(403);assert.equal((await admin.league()).me.role,'member');
+ await n.manage({action:'role',id:kevin,role:'admin'});await admin.users();await admin.manage({action:'role',id:newbie,role:'member'});await n.users(403)});
 await step('per-address limit across usernames',async()=>{const a=new Client();let blocked=false;for(let i=0;i<25&&!blocked;i++){const r=await send('/api/auth',{method:'POST',headers:{'Content-Type':'application/json',origin:base},body:JSON.stringify({action:'login',username:'spray'+i,password:'bad-password'})});blocked=r.status===429}assert.ok(blocked,'IP limit never triggered');await a.auth({action:'login',username:'many',password:'many-password'},429)});
 console.log('PASS '+passed.join(', '));
 }catch(e){console.error('--- wrangler log ---\n'+log.slice(-2500));throw e}finally{stop();try{rmSync(dir,{recursive:true,force:true})}catch{}}

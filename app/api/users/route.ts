@@ -32,5 +32,11 @@ export async function POST(req:Request){try{
  if(!r.meta.changes)throw new HttpError(400,'ปิดผู้ดูแลระบบคนสุดท้ายไม่ได้');
  if(disabled)await db().prepare('DELETE FROM sessions WHERE user_id=?').bind(target.id).run();
  return json({ok:true,users:await list()})}
+ if(b.action==='role'){
+ // Takes effect on the next request: sessions read the role from users. The last enabled admin cannot be demoted.
+ const role=z.enum(['admin','member']).parse(b.role);
+ const r=await db().prepare(`UPDATE users SET role=? WHERE id=? AND NOT (?='member' AND ${lastActiveAdmin})`).bind(role,target.id,role).run();
+ if(!r.meta.changes)throw new HttpError(400,'ลดสิทธิ์ผู้ดูแลระบบคนสุดท้ายไม่ได้');
+ return json({ok:true,users:await list()})}
  return json({error:'คำสั่งไม่ถูกต้อง'},400);
  }catch(e){return failure(e)}}
