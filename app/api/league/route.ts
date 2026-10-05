@@ -1,6 +1,7 @@
 import {z} from 'zod';
 import {db,readState,saveState,owner,originCheck,json,bucket} from '@/lib/server';
-import {session,requireEditor,actor,failure,type Me} from '@/lib/auth';
+import {session,requireEditor,actor,failure,HttpError,type Me} from '@/lib/auth';
+import {can,isAction} from '@/lib/permissions';
 import {fixtures,type Profile} from '@/lib/league';
 export const dynamic='force-dynamic';
 const name=z.string().trim().min(1).max(60), id=z.string().min(1).max(100),score=z.number().int().min(0).max(99).nullable();
@@ -8,10 +9,14 @@ export async function GET(req:Request){try{const data=await readState();const ha
 export async function POST(req:Request){try{
  originCheck(req);if(Number(req.headers.get('content-length')||0)>20000)return json({error:'ข้อมูลใหญ่เกินไป'},413);const b=z.record(z.unknown()).parse(await req.json());
  const me=await requireEditor(req);
- const {state:s,version}=await readState();if(b.version!==version)return json({error:'เพื่อนเพิ่งแก้ไขข้อมูล กรุณาโหลดล่าสุดก่อนบันทึก'},409);
+ const {state:s,version}=await readState();
+ // Permissions (lib/permissions.ts) are checked before the version check and before saveState, so a refused request never changes the version.
+ const p=b.action==='profile'?z.object({id:id.optional(),name,team:z.string().trim().max(60),badge:z.string().max(150),active:z.boolean()}).parse(b.profile):undefined;
+ if(isAction(b.action)){const v=can(me,b.action,p&&{id:p.id,active:p.active,current:s.profiles.find(x=>x.id===p.id)});if(!v.ok)throw new HttpError(403,v.reason)}
+ if(b.version!==version)return json({error:'เพื่อนเพิ่งแก้ไขข้อมูล กรุณาโหลดล่าสุดก่อนบันทึก'},409);
  let eventId:string|undefined;
- if(b.action==='profile'){
- const p=z.object({id:id.optional(),name,team:z.string().trim().max(60),badge:z.string().max(150),active:z.boolean()}).parse(b.profile);if(p.badge&&!/^badges\/[0-9a-f-]+\.(png|jpg|webp)$/.test(p.badge))throw new Error('รูปไม่ถูกต้อง');if(p.badge&&!await bucket().head(p.badge))throw new Error('ไม่พบรูป กรุณาอัปโหลดใหม่');if(s.profiles.some(x=>x.name.toLowerCase()===p.name.toLowerCase()&&x.id!==p.id))throw new Error('มีชื่อผู้เล่นนี้แล้ว');const old=s.profiles.find(x=>x.id===p.id);if(p.id&&!old)throw new Error('ไม่พบผู้เล่น');if(old)Object.assign(old,p);else s.profiles.push({...p,id:crypto.randomUUID()} as Profile);
+ if(p){
+ if(p.badge&&!/^badges\/[0-9a-f-]+\.(png|jpg|webp)$/.test(p.badge))throw new Error('รูปไม่ถูกต้อง');if(p.badge&&!await bucket().head(p.badge))throw new Error('ไม่พบรูป กรุณาอัปโหลดใหม่');if(s.profiles.some(x=>x.name.toLowerCase()===p.name.toLowerCase()&&x.id!==p.id))throw new Error('มีชื่อผู้เล่นนี้แล้ว');const old=s.profiles.find(x=>x.id===p.id);if(p.id&&!old)throw new Error('ไม่พบผู้เล่น');if(old)Object.assign(old,p);else s.profiles.push({...p,id:crypto.randomUUID()} as Profile);
  }else if(b.action==='season'){
  const n=name.parse(b.name);if(b.id){const season=s.seasons.find(x=>x.id===b.id);if(!season)throw new Error('ไม่พบฤดูกาล');season.name=n;if(b.current)s.currentSeason=season.id}else{const sid=crypto.randomUUID();s.seasons.push({id:sid,name:n});if(b.current)s.currentSeason=sid}
  }else if(b.action==='competition'){
