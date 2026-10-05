@@ -4,11 +4,13 @@ type Table=ReturnType<typeof standings>;
 type Score=[number|null,number|null];
 const fmt=([h,a]:Score)=>`${h}–${a}`,scored=([h]:Score)=>h!==null;
 function message(s:LeagueState,m:Match,event:History,table:Table,title:string,score:Score,note:string|undefined,verb:string){
- const name=(id:string)=>s.profiles.find(p=>p.id===id)?.name??'?';const comp=s.competitions.find(c=>c.id===m.competitionId);
- const lines=[`${title} · ${comp?.name??'FC Friends League'}`,`${name(m.home)} ${fmt(score)} ${name(m.away)}`];
+ const name=(id:string)=>s.profiles.find(p=>p.id===id)?.name??'?',club=(p:{name:string;team:string})=>p.team?`${p.name} (${p.team})`:p.name;
+ const player=(id:string)=>{const p=s.profiles.find(x=>x.id===id);return p?club(p):'?'};
+ const comp=s.competitions.find(c=>c.id===m.competitionId),season=s.seasons.find(x=>x.id===comp?.seasonId)?.name;
+ const lines=[title,`📋 ${[comp?.name??'FC Friends League',season].filter(Boolean).join(' · ')}`,`${player(m.home)} ${fmt(score)} ${player(m.away)}`];
  if(note)lines.push(note);
  if(event.by)lines.push(event.by==='legacy'?`✍️ ${verb}ด้วยรหัสกลาง`:`✍️ ${verb}โดย ${name(event.by)}`);
- if(table.length)lines.push('','🏆 อันดับ',...table.slice(0,4).map((r,i)=>`${i+1}. ${r.profile.name} ${r.points} แต้ม`));
+ if(table.length)lines.push('',`🏆 อันดับ${season?` ${season}`:''}`,...table.slice(0,4).map((r,i)=>`${i+1}. ${club(r.profile)} ${r.points} แต้ม`));
  return lines.join('\n');
 }
 // A recorded score (new or edited) — event.after always holds a score here.

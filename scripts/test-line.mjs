@@ -9,6 +9,10 @@ let text=scoreMessage(s,m,ev,standings(s,'season-1'));
 assert.ok(text.includes('คืนวันศุกร์'));assert.ok(text.includes(`${name(m.home)} 2–1 ${name(m.away)}`));assert.ok(!text.includes('แก้จาก'));assert.ok(text.includes(`1. ${name(m.home)} 3 แต้ม`));assert.equal(text.split('\n').filter(l=>/^\d\. /.test(l)).length,4);assert.ok(!text.includes('✍️'));
 assert.ok(scoreMessage(s,m,{...ev,by:'player-2'},[]).includes(`✍️ บันทึกโดย ${name('player-2')}`));assert.ok(scoreMessage(s,m,{...ev,by:'legacy'},[]).includes('✍️ บันทึกด้วยรหัสกลาง'));
 text=scoreMessage(s,m,{...ev,before:[1,1]},[]);assert.ok(text.includes('(แก้จาก 1–1)'));assert.ok(!text.includes('อันดับ'));
+// Header lines: title, then program · season; clubs follow names wherever a profile has one.
+text=scoreMessage(s,m,ev,standings(s,'season-1'));assert.deepEqual(text.split('\n').slice(0,2),['⚽ บันทึกผล','📋 คืนวันศุกร์ · Season 01']);assert.ok(text.includes('🏆 อันดับ Season 01'));
+const home=s.profiles.find(p=>p.id===m.home);home.team='Cheldon';text=scoreMessage(s,m,ev,standings(s,'season-1'));
+assert.ok(text.includes(`${home.name} (Cheldon) 2–1 ${name(m.away)}\n`));assert.ok(text.includes(`1. ${home.name} (Cheldon) 3 แต้ม`));home.team='';
 let req;const fake=status=>async(url,init)=>{req={url,init};return new Response('{}',{status})};
 assert.equal(await pushLine({token:'t',to:'C1',text:'hi',retryKey:ev.id,fetchImpl:fake(200)}),'sent');
 assert.equal(req.url,'https://api.line.me/v2/bot/message/push');assert.equal(req.init.headers.Authorization,'Bearer t');assert.equal(req.init.headers['X-Line-Retry-Key'],ev.id);assert.deepEqual(JSON.parse(req.init.body),{to:'C1',messages:[{type:'text',text:'hi'}]});
@@ -19,8 +23,8 @@ assert.equal(await pushLine({token:'t',to:'C1',text:'hi',retryKey:ev.id,fetchImp
 console.error=quiet;
 const body='{"events":[]}',sig=createHmac('sha256','secret').update(body).digest('base64');
 assert.equal(await verifySignature(body,sig,'secret'),true);assert.equal(await verifySignature(body,sig,'other'),false);assert.equal(await verifySignature(body,null,'secret'),false);
-text=correctionMessage(s,m,{...ev,before:[2,1],after:[null,null],by:'player-2'},[]);assert.ok(text.startsWith('↩️ ยกเลิกผล · คืนวันศุกร์'));assert.ok(text.includes(`${name(m.home)} 2–1 ${name(m.away)}`));assert.ok(text.includes(`✍️ ยกเลิกโดย ${name('player-2')}`));assert.ok(!text.includes('(จาก'));
-text=correctionMessage(s,m,{...ev,before:[2,1],after:[1,1]},standings(s,'season-1'));assert.ok(text.startsWith('✏️ แก้ผล · คืนวันศุกร์'));assert.ok(text.includes(`${name(m.home)} 1–1 ${name(m.away)}`));assert.ok(text.includes('(จาก 2–1)'));assert.ok(text.includes('🏆 อันดับ'));
+text=correctionMessage(s,m,{...ev,before:[2,1],after:[null,null],by:'player-2'},[]);assert.ok(text.startsWith('↩️ ยกเลิกผล\n📋 คืนวันศุกร์ · Season 01'));assert.ok(text.includes(`${name(m.home)} 2–1 ${name(m.away)}`));assert.ok(text.includes(`✍️ ยกเลิกโดย ${name('player-2')}`));assert.ok(!text.includes('(จาก'));
+text=correctionMessage(s,m,{...ev,before:[2,1],after:[1,1]},standings(s,'season-1'));assert.ok(text.startsWith('✏️ แก้ผล\n📋 คืนวันศุกร์ · Season 01'));assert.ok(text.includes(`${name(m.home)} 1–1 ${name(m.away)}`));assert.ok(text.includes('(จาก 2–1)'));assert.ok(text.includes('🏆 อันดับ'));
 text=correctionMessage(s,m,{...ev,before:[null,null],after:[3,0],by:'legacy'},[]);assert.ok(text.startsWith('✏️ แก้ผล'));assert.ok(!text.includes('(จาก'));assert.ok(text.includes('✍️ แก้ด้วยรหัสกลาง'));
 assert.equal(await pushLine({token:'t',to:'C1',text:'hi',retryKey:ev.id,api:'http://localhost:9',fetchImpl:fake(200)}),'sent');assert.equal(req.url,'http://localhost:9/v2/bot/message/push');
 console.log('line tests passed');
