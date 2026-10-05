@@ -14,6 +14,7 @@ export async function session(req:Request):Promise<{id:string;me:Me}|null>{const
 // Every write goes through here: a session is required and an account must have replaced its temporary password.
 export async function requireEditor(req:Request){const s=await session(req);if(!s)throw new HttpError(401,'กรุณาเข้าสู่ระบบก่อนแก้ไขข้อมูล');if(!s.me.legacy&&s.me.mustChangePassword)throw new HttpError(403,'กรุณาเปลี่ยนรหัสผ่านก่อนใช้งาน');return s.me}
 export async function requireAdmin(req:Request){const me=await requireEditor(req);if(me.legacy||me.role!=='admin')throw new HttpError(403,'เฉพาะผู้ดูแลระบบเท่านั้น');return me}
+// Stored as History.by: the editor's profile id (public, unlike user ids), or 'legacy' for the shared password. Events from before accounts have none.
 export const actor=(me:Me)=>me.legacy?'legacy':me.profileId;
 export async function startSession(req:Request,userId:string|null){const token=crypto.randomUUID()+crypto.randomUUID(),now=Date.now();await db().batch([db().prepare('INSERT INTO sessions (id,expires,user_id) VALUES (?,?,?)').bind(await digest(token),now+TTL,userId),db().prepare('DELETE FROM sessions WHERE expires<?').bind(now)]);return `ffl_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=43200${new URL(req.url).protocol==='https:'?'; Secure':''}`}
 export const clearCookie='ffl_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0';

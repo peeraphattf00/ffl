@@ -1,6 +1,6 @@
 import {z} from 'zod';
 import {db,readState,saveState,owner,passwordHash,digest,originCheck,json,bucket} from '@/lib/server';
-import {session,requireEditor,startSession,clearCookie,sessionToken,checkPassword,ipKey,assertNotLimited,recordFailure,clearFailures,failure,LIMITS,type Me} from '@/lib/auth';
+import {session,requireEditor,actor,startSession,clearCookie,sessionToken,checkPassword,ipKey,assertNotLimited,recordFailure,clearFailures,failure,LIMITS,type Me} from '@/lib/auth';
 import {fixtures,type Profile} from '@/lib/league';
 export const dynamic='force-dynamic';
 const name=z.string().trim().min(1).max(60), id=z.string().min(1).max(100),score=z.number().int().min(0).max(99).nullable();
@@ -15,7 +15,7 @@ export async function POST(req:Request){try{
  await clearFailures(key);return json({ok:true},200,{'Set-Cookie':await startSession(req,null)})
  }
  if(b.action==='logout'){const token=sessionToken(req);if(token)await db().prepare('DELETE FROM sessions WHERE id=?').bind(await digest(token)).run();return json({ok:true},200,{'Set-Cookie':clearCookie})}
- await requireEditor(req);
+ const me=await requireEditor(req);
  const {state:s,version}=await readState();if(b.version!==version)return json({error:'เพื่อนเพิ่งแก้ไขข้อมูล กรุณาโหลดล่าสุดก่อนบันทึก'},409);
  let eventId:string|undefined;
  if(b.action==='profile'){
@@ -29,7 +29,7 @@ export async function POST(req:Request){try{
  }else if(b.action==='score'||b.action==='restore'){
  const m=s.matches.find(x=>x.id===b.id);if(!m)throw new Error('ไม่พบคู่แข่งขัน');if(s.competitions.find(c=>c.id===m.competitionId)?.archived)throw new Error('กู้คืนโปรแกรมก่อนแก้ไขผล');let hs=score.parse(b.hs??null),as=score.parse(b.as??null);
  if(b.action==='restore'){const event=s.history.find(h=>h.id===b.eventId&&h.matchId===m.id);if(!event)throw new Error('ไม่พบประวัติ');if(b.undo&&(event.revision!==m.revision||Date.now()-Date.parse(event.time)>30000))throw new Error('Undo หมดเวลาหรือมีผลใหม่แล้ว ใช้ประวัติเพื่อคืนค่าแทน');[hs,as]=event.before}
- if((hs===null)!==(as===null))throw new Error('กรุณาระบุสกอร์ทั้งสองทีม');if(m.hs===hs&&m.as===as)throw new Error('ผลไม่เปลี่ยนแปลง');eventId=crypto.randomUUID();s.history.unshift({id:eventId,matchId:m.id,before:[m.hs,m.as],after:[hs,as],time:new Date().toISOString(),revision:m.revision+1,kind:b.action==='restore'?'คืนค่า':hs===null?'ล้างผล':'บันทึกผล'});m.hs=hs;m.as=as;m.revision++;
+ if((hs===null)!==(as===null))throw new Error('กรุณาระบุสกอร์ทั้งสองทีม');if(m.hs===hs&&m.as===as)throw new Error('ผลไม่เปลี่ยนแปลง');eventId=crypto.randomUUID();s.history.unshift({id:eventId,matchId:m.id,before:[m.hs,m.as],after:[hs,as],time:new Date().toISOString(),revision:m.revision+1,kind:b.action==='restore'?'คืนค่า':hs===null?'ล้างผล':'บันทึกผล',by:actor(me)});m.hs=hs;m.as=as;m.revision++;
  }else throw new Error('คำสั่งไม่ถูกต้อง');
  await saveState(s,version);return json({ok:true,eventId});
  }catch(e){return failure(e)}}

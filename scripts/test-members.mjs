@@ -6,6 +6,7 @@ import {pbkdf2Sync} from 'node:crypto';
 import {rmSync,mkdirSync,writeFileSync,existsSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import http from 'node:http';
+import {initialState} from '../lib/league.ts';
 const root=resolve(import.meta.dirname,'..'),dir=join(root,'.wrangler','test-members',String(process.pid)),port=Number(process.env.TEST_PORT||8791),base=`http://localhost:${port}`;
 const wrangler=join(root,'node_modules/wrangler/bin/wrangler.js'),env={...process.env,WRANGLER_SEND_METRICS:'false',CI:'1'};
 if(!existsSync(join(root,'dist/server/wrangler.json')))throw new Error('Run `npm run build` first');
@@ -13,7 +14,9 @@ const hash=(password,salt)=>pbkdf2Sync(password,salt,100000,32,'sha256').toStrin
 const user=(id,username,profileId,role,password,{mustChange=0,disabled=0}={})=>`INSERT INTO users (id,username,profile_id,role,hash,salt,must_change_password,disabled,created_at) VALUES ('${id}','${username}','${profileId}','${role}','${hash(password,'salt-'+id)}','salt-${id}',${mustChange},${disabled},${Date.now()});`;
 // Seeded state: the shared password still exists (transition period) and a few accounts the API cannot create yet.
 const LEGACY='legacy-password-1';
-const seed=[`INSERT INTO settings (id,hash,salt) VALUES ('password','${hash(LEGACY,'legacy-salt')}','legacy-salt');`,
+// League row as it exists before accounts: one played match whose history event has no 'by'.
+const old=initialState();old.competitions.push({id:'comp-old',name:'before accounts',date:'2026-09-01',seasonId:'season-1',players:['player-1','player-2'],legs:1,archived:false});old.matches.push({id:'m-old',competitionId:'comp-old',home:'player-1',away:'player-2',round:1,hs:1,as:0,revision:1});old.history.push({id:'ev-old',matchId:'m-old',before:[null,null],after:[1,0],time:'2026-09-01T12:00:00.000Z',revision:1,kind:'บันทึกผล'});
+const seed=[`INSERT INTO league (id,payload,version) VALUES ('main','${JSON.stringify(old).replace(/'/g,"''")}',5);`,`INSERT INTO settings (id,hash,salt) VALUES ('password','${hash(LEGACY,'legacy-salt')}','legacy-salt');`,
  user('u-tester','Tester','player-2','member','tester-password'),
  user('u-fresh','fresh','player-3','member','temp-pass-123',{mustChange:1}),
  user('u-off','offline','player-4','member','offline-password',{disabled:1}),
@@ -58,6 +61,11 @@ await step('temporary password must be replaced, other sessions end',async()=>{c
  assert.equal((await other.league()).me,null,'other session must be revoked');await new Client().auth({action:'login',username:'newbie',password:newbieTemp},401);
  await n.auth({action:'password',current:'brand-new-pass',next:'second-new-pass'});await new Client().auth({action:'login',username:'newbie',password:'second-new-pass'});
  const l=new Client();await l.req('/api/league',{action:'login',password:LEGACY});await l.auth({action:'password',current:LEGACY,next:'whatever-123'},401)});
+await step('history records who edited, old events still restore',async()=>{const m=new Client();await m.auth({action:'login',username:'tester',password:'tester-password'});
+ await m.edit({action:'restore',id:'m-old',eventId:'ev-old'});let d=await m.league();const restored=d.state.history[0];assert.equal(restored.by,'player-2');assert.equal(restored.kind,'คืนค่า');assert.equal(d.state.history.find(h=>h.id==='ev-old').by,undefined,'old event must stay untouched');assert.equal(d.state.matches.find(x=>x.id==='m-old').hs,null);
+ const ev=await m.edit({action:'score',id:'m-old',hs:2,as:2});d=await m.league();assert.equal(d.state.history[0].by,'player-2');
+ const l=new Client();await l.req('/api/league',{action:'login',password:LEGACY});await l.edit({action:'score',id:'m-old',hs:3,as:2});d=await l.league();assert.equal(d.state.history[0].by,'legacy');
+ await admin.edit({action:'restore',id:'m-old',eventId:ev.eventId});d=await admin.league();assert.equal(d.state.history[0].by,'player-1');assert.deepEqual(d.state.history[0].after,[null,null])});
 await step('generic login errors',async()=>{const a=new Client();const x=await a.auth({action:'login',username:'nobody',password:'whatever-1'},401);const y=await a.auth({action:'login',username:'tester',password:'wrong-password'},401);assert.equal(x.error,y.error)});
 await step('login is case-insensitive and returns me',async()=>{const a=new Client();await a.auth({action:'login',username:'TESTER',password:'tester-password'});const d=await a.league();assert.deepEqual(d.me,{legacy:false,id:'u-tester',username:'Tester',role:'member',profileId:'player-2',mustChangePassword:false});assert.equal(d.authenticated,true);await a.edit({action:'season',name:'member season'})});
 await step('temporary password blocks every write',async()=>{const a=new Client();await a.auth({action:'login',username:'fresh',password:'temp-pass-123'});const d=await a.league();assert.equal(d.me.mustChangePassword,true);assert.equal(d.authenticated,false);await a.edit({action:'season',name:'x'},403);await a.req('/api/badge',new Uint8Array(0),{status:403,headers:{'Content-Type':'image/png'}})});
