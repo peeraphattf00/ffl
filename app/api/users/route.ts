@@ -3,10 +3,12 @@ import {db,originCheck,json,readState} from '@/lib/server';
 import {requireAdmin,failure,HttpError,hashPassword,tempPassword,username,unique,userColumns,toUser,clearFailures,userKey} from '@/lib/auth';
 export const dynamic='force-dynamic';
 // Admin-only account management. Account rows never leave this route with their hash or salt.
+// True for the row being updated when it is the only enabled admin left.
+const lastActiveAdmin="role='admin' AND disabled=0 AND (SELECT count(*) FROM users WHERE role='admin' AND disabled=0)<=1";
 const list=async()=>(await db().prepare(`SELECT ${userColumns} FROM users ORDER BY created_at`).all<Record<string,unknown>>()).results.map(toUser);
 export async function GET(req:Request){try{await requireAdmin(req);return json({users:await list()})}catch(e){return failure(e)}}
 export async function POST(req:Request){try{
- originCheck(req);if(Number(req.headers.get('content-length')||0)>4000)return json({error:'ข้อมูลใหญ่เกินไป'},413);await requireAdmin(req);const b=z.record(z.unknown()).parse(await req.json());
+ originCheck(req);if(Number(req.headers.get('content-length')||0)>4000)return json({error:'ข้อมูลใหญ่เกินไป'},413);const b=z.record(z.unknown()).parse(await req.json());await requireAdmin(req);
  if(b.action==='create'){
  const name=username.parse(b.username),profileId=z.string().min(1).max(100).parse(b.profileId);const profile=(await readState()).state.profiles.find(p=>p.id===profileId);
  if(!profile)throw new HttpError(400,'ไม่พบโปรไฟล์ผู้เล่น');if(!profile.active)throw new HttpError(400,'เปิดใช้งานโปรไฟล์ก่อนสร้างบัญชี');
@@ -22,5 +24,13 @@ export async function POST(req:Request){try{
  await db().batch([db().prepare('UPDATE users SET hash=?,salt=?,must_change_password=1 WHERE id=?').bind(hash,salt,target.id),db().prepare('DELETE FROM sessions WHERE user_id=?').bind(target.id)]);
  await clearFailures(await userKey(target.username));
  return json({ok:true,password,users:await list()})}
+ if(b.action==='disable'){
+ // Disabling keeps the account and its history but ends its sessions now; enabling does not touch the password.
+ // The last active admin cannot be disabled; the guard is inside the UPDATE so two admins disabling each other cannot both succeed.
+ const disabled=z.boolean().parse(b.disabled);
+ const r=await db().prepare(`UPDATE users SET disabled=? WHERE id=? AND NOT (?=1 AND ${lastActiveAdmin})`).bind(disabled?1:0,target.id,disabled?1:0).run();
+ if(!r.meta.changes)throw new HttpError(400,'ปิดผู้ดูแลระบบคนสุดท้ายไม่ได้');
+ if(disabled)await db().prepare('DELETE FROM sessions WHERE user_id=?').bind(target.id).run();
+ return json({ok:true,users:await list()})}
  return json({error:'คำสั่งไม่ถูกต้อง'},400);
  }catch(e){return failure(e)}}

@@ -81,6 +81,13 @@ await step('admin reset: new temporary password, sessions ended, lockout cleared
  const r=await admin.manage({action:'reset',id:'u-tester'});assert.match(r.password,TEMP);testerTemp=r.password;assert.equal(r.users.find(u=>u.id==='u-tester').mustChangePassword,true);
  assert.equal((await testerKeep.league()).me,null,'existing sessions must end');await new Client().auth({action:'login',username:'tester',password:'tester-password'},401);
  const t=new Client();await t.auth({action:'login',username:'tester',password:testerTemp});assert.equal((await t.league()).me.mustChangePassword,true);await t.edit({action:'season',name:'x'},403);await t.auth({action:'password',current:testerTemp,next:'tester-password-2'});await t.edit({action:'season',name:'after reset'})});
+await step('disable ends sessions and blocks login; enable keeps the password; last admin protected',async()=>{
+ await admin.manage({action:'disable',id:(await admin.league()).me.id,disabled:true},400);
+ const n=new Client();await n.auth({action:'login',username:'newbie',password:'second-new-pass'});await n.manage({action:'disable',id:'u-tester',disabled:true},403);
+ const r=await admin.manage({action:'disable',id:(await n.league()).me.id,disabled:true});assert.equal(r.users.find(u=>u.username==='newbie').disabled,true);
+ assert.equal((await n.league()).me,null,'disabled account must lose its session');await new Client().auth({action:'login',username:'newbie',password:'second-new-pass'},403);
+ await admin.manage({action:'disable',id:r.users.find(u=>u.username==='newbie').id,disabled:false});await new Client().auth({action:'login',username:'newbie',password:'second-new-pass'});
+ assert.ok((await admin.league()).state.profiles.some(p=>p.id===newProfile),'profile and history stay')});
 await step('per-address limit across usernames',async()=>{const a=new Client();let blocked=false;for(let i=0;i<25&&!blocked;i++){const r=await send('/api/auth',{method:'POST',headers:{'Content-Type':'application/json',origin:base},body:JSON.stringify({action:'login',username:'spray'+i,password:'bad-password'})});blocked=r.status===429}assert.ok(blocked,'IP limit never triggered');await a.auth({action:'login',username:'many',password:'many-password'},429)});
 console.log('PASS '+passed.join(', '));
 }catch(e){console.error('--- wrangler log ---\n'+log.slice(-2500));throw e}finally{stop();try{rmSync(dir,{recursive:true,force:true})}catch{}}
