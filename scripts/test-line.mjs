@@ -7,7 +7,8 @@ const m=s.matches[0];m.hs=2;m.as=1;m.revision=1;const ev={id:crypto.randomUUID()
 const name=id=>s.profiles.find(p=>p.id===id).name;
 let text=scoreMessage(s,m,ev,standings(s,'season-1'));
 assert.ok(text.includes('คืนวันศุกร์'));assert.ok(text.includes(`${name(m.home)} 2–1 ${name(m.away)}`));assert.ok(!text.includes('แก้จาก'));assert.ok(text.includes(`1. ${name(m.home)} 3 แต้ม`));assert.equal(text.split('\n').filter(l=>/^\d\. /.test(l)).length,4);assert.ok(!text.includes('✍️'));
-assert.ok(scoreMessage(s,m,{...ev,by:'player-2'},[]).includes(`✍️ บันทึกโดย ${name('player-2')}`));assert.ok(scoreMessage(s,m,{...ev,by:'legacy'},[]).includes('✍️ บันทึกด้วยรหัสกลาง'));
+// Messages never say who recorded or edited (History.by stays out of LINE).
+const anonymous=t=>!/✍️|โดย|รหัสกลาง/.test(t);for(const by of ['player-2','legacy'])for(const e of [{...ev,by},{...ev,by,before:[1,1]}])assert.ok(anonymous(scoreMessage(s,m,e,[])));
 text=scoreMessage(s,m,{...ev,before:[1,1]},[]);assert.ok(text.includes('(แก้จาก 1–1)'));assert.ok(!text.includes('อันดับ'));
 // Header lines: title, then program · season; clubs follow names wherever a profile has one.
 text=scoreMessage(s,m,ev,standings(s,'season-1'));assert.deepEqual(text.split('\n').slice(0,2),['⚽ บันทึกผล','📋 คืนวันศุกร์ · Season 01']);assert.ok(text.includes('🏆 อันดับ Season 01'));
@@ -23,8 +24,8 @@ assert.equal(await pushLine({token:'t',to:'C1',text:'hi',retryKey:ev.id,fetchImp
 console.error=quiet;
 const body='{"events":[]}',sig=createHmac('sha256','secret').update(body).digest('base64');
 assert.equal(await verifySignature(body,sig,'secret'),true);assert.equal(await verifySignature(body,sig,'other'),false);assert.equal(await verifySignature(body,null,'secret'),false);
-text=correctionMessage(s,m,{...ev,before:[2,1],after:[null,null],by:'player-2'},[]);assert.ok(text.startsWith('↩️ ยกเลิกผล\n📋 คืนวันศุกร์ · Season 01'));assert.ok(text.includes(`${name(m.home)} 2–1 ${name(m.away)}`));assert.ok(text.includes(`✍️ ยกเลิกโดย ${name('player-2')}`));assert.ok(!text.includes('(จาก'));
+text=correctionMessage(s,m,{...ev,before:[2,1],after:[null,null],by:'player-2'},[]);assert.ok(text.startsWith('↩️ ยกเลิกผล\n📋 คืนวันศุกร์ · Season 01'));assert.ok(text.includes(`${name(m.home)} 2–1 ${name(m.away)}`));assert.ok(anonymous(text));assert.ok(!text.includes('(จาก'));
 text=correctionMessage(s,m,{...ev,before:[2,1],after:[1,1]},standings(s,'season-1'));assert.ok(text.startsWith('✏️ แก้ผล\n📋 คืนวันศุกร์ · Season 01'));assert.ok(text.includes(`${name(m.home)} 1–1 ${name(m.away)}`));assert.ok(text.includes('(จาก 2–1)'));assert.ok(text.includes('🏆 อันดับ'));
-text=correctionMessage(s,m,{...ev,before:[null,null],after:[3,0],by:'legacy'},[]);assert.ok(text.startsWith('✏️ แก้ผล'));assert.ok(!text.includes('(จาก'));assert.ok(text.includes('✍️ แก้ด้วยรหัสกลาง'));
+text=correctionMessage(s,m,{...ev,before:[null,null],after:[3,0],by:'legacy'},[]);assert.ok(text.startsWith('✏️ แก้ผล'));assert.ok(!text.includes('(จาก'));assert.ok(anonymous(text));
 assert.equal(await pushLine({token:'t',to:'C1',text:'hi',retryKey:ev.id,api:'http://localhost:9',fetchImpl:fake(200)}),'sent');assert.equal(req.url,'http://localhost:9/v2/bot/message/push');
 console.log('line tests passed');

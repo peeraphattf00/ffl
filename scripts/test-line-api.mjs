@@ -21,5 +21,5 @@ try{await steps(server,async step=>{
   let r=await c.edit({action:'restore',id:m1.id,eventId:history(m1,[1,1]).id});assert.equal(r.line,'sent');assert.ok(text().startsWith('✏️ แก้ผล'));assert.ok(text().includes('3–0'));assert.ok(text().includes('(จาก 1–1)'));
   d=await c.league();r=await c.edit({action:'restore',id:m1.id,eventId:d.state.history.find(h=>h.matchId===m1.id&&h.kind==='บันทึกผล'&&h.after[0]===3&&h.before[0]===null).id});assert.equal(r.line,'sent');assert.ok(text().startsWith('↩️ ยกเลิกผล'));assert.ok(text().includes('3–0'));assert.equal(pushes.length,7)});
  await step('clearing a delivered result sends a correction',async()=>{await c.edit({action:'score',id:m1.id,hs:2,as:2});const r=await c.edit({action:'score',id:m1.id,hs:null,as:null});assert.equal(r.line,'sent');assert.ok(text().startsWith('↩️ ยกเลิกผล'));assert.ok(text().includes('2–2'));assert.equal(pushes.length,9)});
- await step('every push names who did it',async()=>{assert.ok(pushes.every(p=>p.messages[0].text.includes('✍️ ')))});
+ await step('no push says who did it',async()=>{assert.ok(pushes.every(p=>!/✍️|โดย|รหัสกลาง/.test(p.messages[0].text)))});
 })}finally{fakeLine.close()}
