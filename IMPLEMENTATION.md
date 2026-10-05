@@ -12,9 +12,26 @@ R2 stores cropped badges. The app accepts PNG/JPEG/WebP, crops to 512×512, veri
 
 The Site audience is public (decided 2026-10-05, FFL-4): anonymous visitors can read league data and badges (`GET /api/league`, `GET /api/badge`), while every write (`POST /api/league`, `POST /api/badge`) requires an editing session. The audience itself is a Site setting changed by the owner, not app code. The Site owner is identified by the ChatGPT identity header, which is only present after signing in with ChatGPT; on a public Site the owner must use the in-app "เข้าสู่ระบบเจ้าของ" link (`/signin-with-chatgpt`) before owner-only actions such as creating the first admin. ChatGPT sign-in is separate from member accounts.
 
-Editing uses member accounts (`users`): one account per league profile, role `admin` or `member`. Members can edit all league data; admins can also manage accounts. The verified owner creates the first admin once (`POST /api/auth` `bootstrap`, refused once any admin exists). Admins create accounts, reset passwords, disable/enable accounts and change roles (`/api/users`); new and reset accounts get a 12-character temporary password shown once, stored only as a hash, and must replace it before any other request succeeds. Changing a password revokes the account's other sessions; resetting or disabling revokes all of them. The last enabled admin cannot be disabled or demoted. Passwords are PBKDF2 SHA-256 hashes compared in constant time; sessions are HTTP-only, same-site cookies expiring after 12 hours, and `sessions.user_id` binds them to an account. Sign-in errors do not reveal whether a username exists, and only failures are rate limited: 5 per username and address and 20 per address per 15 minutes. Score history records the editor's profile id in `History.by`.
+Editing uses member accounts (`users`): one account per league profile, role `admin` or `member` (permissions below). The verified owner creates the first admin once (`POST /api/auth` `bootstrap`, refused once any admin exists). Admins create accounts, reset passwords, disable/enable accounts and change roles (`/api/users`); new and reset accounts get a 12-character temporary password shown once, stored only as a hash, and must replace it before any other request succeeds. Changing a password revokes the account's other sessions; resetting or disabling revokes all of them. The last enabled admin cannot be disabled or demoted. Passwords are PBKDF2 SHA-256 hashes compared in constant time; sessions are HTTP-only, same-site cookies expiring after 12 hours, and `sessions.user_id` binds them to an account. Sign-in errors do not reveal whether a username exists, and only failures are rate limited: 5 per username and address and 20 per address per 15 minutes. Score history records the editor's profile id in `History.by`.
 
 The shared editing password used before accounts has been retired (migration `0002_retire_shared_password` deletes the `settings.password` row, sessions without `user_id` and their rate-limit rows; the API no longer has `login`/`setup` on `/api/league` and rejects any session without an account). History events it recorded keep `by: 'legacy'` and show as แก้ด้วยรหัสกลาง.
+
+### Permissions
+
+| Action | Admin | Member |
+| --- | --- | --- |
+| Edit name, team and badge of **their own** profile (`profile`) | ✅ | ✅ |
+| Edit other profiles, turn a profile on/off (`active`), add a player | ✅ | ❌ |
+| Create or edit seasons (`season`) | ✅ | ❌ |
+| Create or edit competitions (`competition`), archive or restore them (`archive`) | ✅ | ❌ |
+| Record, edit or clear any result, Undo, restore from history (`score`, `restore`) — **every match**, played in or not | ✅ | ✅ |
+| Upload a badge image (`POST /api/badge`) | ✅ | ✅ (can only be set on their own profile) |
+| Manage accounts (`/api/users`) | ✅ | ❌ |
+| Change their own password | ✅ | ✅ |
+
+The rules live in one place, `lib/permissions.ts` (`can(me, action, target)`, a pure function returning a Thai reason when refused). `POST /api/league` calls it after `requireEditor()` and before the version check and `saveState`, so a refusal is a 403 that leaves the version unchanged; the role is read from the database on every request, so a demoted admin loses admin actions on their next request. The UI uses the same `can()` to hide buttons (signed-out visitors still see them and are asked to sign in) and, on a 403, shows the reason, closes the dialog and reloads. Account management keeps its own `requireAdmin()` check in `/api/users`. Uploaded badges are not tied to a profile, so the profile save is what is enforced; unused uploads stay in R2 as before.
+
+When changing a rule, update `lib/permissions.ts` together with its tests: the unit table in `scripts/test-permissions.mjs` and the API checks in `scripts/test-members.mjs` (step "members edit only their own profile…" and the role-change step).
 
 ## Migrations, backup and rollback
 
@@ -28,9 +45,10 @@ Schema changes are additive only: new tables, new nullable columns and new index
 
 ## Verification
 
-- `npm test` runs the league, migration, member-account and league API tests; it builds first and needs no running dev server
+- `npm test` runs the league, permission, migration, member-account and league API tests; it builds first and needs no running dev server
 - `node node_modules/typescript/bin/tsc --noEmit`
 - `node scripts/test-league.mjs`
+- `node scripts/test-permissions.mjs` (permission table, no server)
 - `node scripts/test-members.mjs` (after a build; `scripts/test-server.mjs` starts `wrangler dev` on a throwaway D1 in `.wrangler/test-server`, port 8791 or `TEST_PORT`)
 - `node scripts/test-migration.mjs` (optionally with a `backups/<timestamp>/league.json`)
 - `node scripts/test-api.mjs` (after a build; same harness on port 8792 or `TEST_PORT`)
