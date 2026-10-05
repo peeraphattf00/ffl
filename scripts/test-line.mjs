@@ -1,0 +1,31 @@
+import assert from 'node:assert/strict';
+import {createHmac} from 'node:crypto';
+import {initialState,fixtures,standings} from '../lib/league.ts';
+import {scoreMessage,correctionMessage,pushLine,verifySignature} from '../lib/line.ts';
+const s=initialState();s.competitions.push({id:'c1',name:'คืนวันศุกร์',date:'2026-10-05',seasonId:'season-1',players:s.profiles.map(p=>p.id),legs:1,archived:false});s.matches.push(...fixtures(s.profiles.map(p=>p.id),1,'c1'));
+const m=s.matches[0];m.hs=2;m.as=1;m.revision=1;const ev={id:crypto.randomUUID(),matchId:m.id,before:[null,null],after:[2,1],time:new Date().toISOString(),revision:1,kind:'บันทึกผล'};
+const name=id=>s.profiles.find(p=>p.id===id).name;
+let text=scoreMessage(s,m,ev,standings(s,'season-1'));
+assert.ok(text.includes('คืนวันศุกร์'));assert.ok(text.includes(`${name(m.home)} 2–1 ${name(m.away)}`));assert.ok(!text.includes('แก้จาก'));assert.ok(text.includes(`1. ${name(m.home)} 3 แต้ม`));assert.equal(text.split('\n').filter(l=>/^\d\. /.test(l)).length,4);assert.ok(!text.includes('✍️'));
+// Messages never say who recorded or edited (History.by stays out of LINE).
+const anonymous=t=>!/✍️|โดย|รหัสกลาง/.test(t);for(const by of ['player-2','legacy'])for(const e of [{...ev,by},{...ev,by,before:[1,1]}])assert.ok(anonymous(scoreMessage(s,m,e,[])));
+text=scoreMessage(s,m,{...ev,before:[1,1]},[]);assert.ok(text.includes('(แก้จาก 1–1)'));assert.ok(!text.includes('อันดับ'));
+// Header lines: title, then program · season; clubs follow names wherever a profile has one.
+text=scoreMessage(s,m,ev,standings(s,'season-1'));assert.deepEqual(text.split('\n').slice(0,2),['⚽ บันทึกผล','📋 คืนวันศุกร์ · Season 01']);assert.ok(text.includes('🏆 อันดับ Season 01'));
+const home=s.profiles.find(p=>p.id===m.home);home.team='Cheldon';text=scoreMessage(s,m,ev,standings(s,'season-1'));
+assert.ok(text.includes(`${home.name} (Cheldon) 2–1 ${name(m.away)}\n`));assert.ok(text.includes(`1. ${home.name} (Cheldon) 3 แต้ม`));home.team='';
+let req;const fake=status=>async(url,init)=>{req={url,init};return new Response('{}',{status})};
+assert.equal(await pushLine({token:'t',to:'C1',text:'hi',retryKey:ev.id,fetchImpl:fake(200)}),'sent');
+assert.equal(req.url,'https://api.line.me/v2/bot/message/push');assert.equal(req.init.headers.Authorization,'Bearer t');assert.equal(req.init.headers['X-Line-Retry-Key'],ev.id);assert.deepEqual(JSON.parse(req.init.body),{to:'C1',messages:[{type:'text',text:'hi'}]});
+assert.equal(await pushLine({token:'t',to:'C1',text:'hi',retryKey:ev.id,fetchImpl:fake(409)}),'sent');
+const quiet=console.error;console.error=()=>{};
+assert.equal(await pushLine({token:'t',to:'C1',text:'hi',retryKey:ev.id,fetchImpl:fake(401)}),'failed');
+assert.equal(await pushLine({token:'t',to:'C1',text:'hi',retryKey:ev.id,fetchImpl:async()=>{throw new Error('timeout')}}),'failed');
+console.error=quiet;
+const body='{"events":[]}',sig=createHmac('sha256','secret').update(body).digest('base64');
+assert.equal(await verifySignature(body,sig,'secret'),true);assert.equal(await verifySignature(body,sig,'other'),false);assert.equal(await verifySignature(body,null,'secret'),false);
+text=correctionMessage(s,m,{...ev,before:[2,1],after:[null,null],by:'player-2'},[]);assert.ok(text.startsWith('↩️ ยกเลิกผล\n📋 คืนวันศุกร์ · Season 01'));assert.ok(text.includes(`${name(m.home)} 2–1 ${name(m.away)}`));assert.ok(anonymous(text));assert.ok(!text.includes('(จาก'));
+text=correctionMessage(s,m,{...ev,before:[2,1],after:[1,1]},standings(s,'season-1'));assert.ok(text.startsWith('✏️ แก้ผล\n📋 คืนวันศุกร์ · Season 01'));assert.ok(text.includes(`${name(m.home)} 1–1 ${name(m.away)}`));assert.ok(text.includes('(จาก 2–1)'));assert.ok(text.includes('🏆 อันดับ'));
+text=correctionMessage(s,m,{...ev,before:[null,null],after:[3,0],by:'legacy'},[]);assert.ok(text.startsWith('✏️ แก้ผล'));assert.ok(!text.includes('(จาก'));assert.ok(anonymous(text));
+assert.equal(await pushLine({token:'t',to:'C1',text:'hi',retryKey:ev.id,api:'http://localhost:9',fetchImpl:fake(200)}),'sent');assert.equal(req.url,'http://localhost:9/v2/bot/message/push');
+console.log('line tests passed');

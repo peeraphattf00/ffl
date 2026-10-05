@@ -30,6 +30,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -44,3 +45,8 @@ next-env.d.ts
 /.codex/
 /outputs/
 /work/
+# League data backups (scripts/backup-league.mjs); keep out of Git.
+/backups/
+
+# Local secrets live in .env; wrangler would prefer a stray .dev.vars over it, so never commit one either.
+.dev.vars

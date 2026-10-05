@@ -2,7 +2,7 @@ export type Profile={id:string;name:string;team:string;badge:string;active:boole
 export type Season={id:string;name:string};
 export type Competition={id:string;name:string;date:string;seasonId:string;players:string[];legs:1|2;archived:boolean};
 export type Match={id:string;competitionId:string;home:string;away:string;round:number;hs:number|null;as:number|null;revision:number};
-export type History={id:string;matchId:string;before:[number|null,number|null];after:[number|null,number|null];time:string;revision:number;kind:string};
+export type History={id:string;matchId:string;before:[number|null,number|null];after:[number|null,number|null];time:string;revision:number;kind:string;by?:string};
 export type LeagueState={profiles:Profile[];seasons:Season[];currentSeason:string;competitions:Competition[];matches:Match[];history:History[]};
 export function initialState():LeagueState{return {profiles:['KEVIN','Dioxzyp','YEPPO','EKAI'].map((name,i)=>({id:`player-${i+1}`,name,team:'',badge:'',active:true})),seasons:[{id:'season-1',name:'Season 01'}],currentSeason:'season-1',competitions:[],matches:[],history:[]}}
 export function fixtures(players:string[],legs:1|2,competitionId:string):Match[]{

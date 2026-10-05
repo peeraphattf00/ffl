@@ -8,6 +8,27 @@
       "when": 1790492305806,
       "tag": "0000_volatile_mole_man",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1791176188396,
+      "tag": "0001_users",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791180240142,
+      "tag": "0002_retire_shared_password",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1791189647673,
+      "tag": "0003_line_notifications",
+      "breakpoints": true
     }
   ]
 }
